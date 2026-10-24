@@ -1,12 +1,14 @@
 // Dyeline OFX plugin entry point.
 //
-// Milestone 0: one effect with a single Exposure tool rendered on the CPU. The tool chain,
-// GPU backends and the Look Designer arrive in later milestones; this file stays a thin
-// bridge between OFX and the render core in core/.
+// Milestone 0: one effect with a single Exposure tool, rendered on the CPU or on the GPU the
+// host hands over (CUDA or Metal). The tool chain and the Look Designer arrive in later
+// milestones; this file stays a thin bridge between OFX and the render core in core/.
 
 #include <memory>
+#include <string>
 
 #include "dyeline/exposure.h"
+#include "dyeline/gpu.h"
 #include "ofxsImageEffect.h"
 #include "ofxsMultiThread.h"
 #include "ofxsProcessing.h"
@@ -86,7 +88,13 @@ public:
             OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
         }
 
-        ExposureProcessor processor(*this, *src, channels, params_at(args.time));
+        const dyeline::ExposureParams params = params_at(args.time);
+        if (args.isEnabledCudaRender || args.isEnabledMetalRender) {
+            render_gpu(args, *src, *dst, channels, params);
+            return;
+        }
+
+        ExposureProcessor processor(*this, *src, channels, params);
         processor.setDstImg(dst.get());
         processor.setRenderWindow(args.renderWindow);
         processor.process();
@@ -103,6 +111,41 @@ public:
     }
 
 private:
+    // On a GPU render the images' pixel data are device buffers on the host's GPU: CUDA
+    // device pointers, or MTLBuffers for Metal.
+    void render_gpu(const OFX::RenderArguments& args, const OFX::Image& src, OFX::Image& dst,
+                    int channels, const dyeline::ExposureParams& params) {
+        const OfxRectI& window = args.renderWindow;
+        const OfxRectI& src_bounds = src.getBounds();
+        const OfxRectI& dst_bounds = dst.getBounds();
+
+        dl_exposure_args kernel_args{};
+        kernel_args.width = window.x2 - window.x1;
+        kernel_args.height = window.y2 - window.y1;
+        kernel_args.channels = channels;
+        kernel_args.src_row_floats = src.getRowBytes() / static_cast<int>(sizeof(float));
+        kernel_args.dst_row_floats = dst.getRowBytes() / static_cast<int>(sizeof(float));
+        kernel_args.src_x0 = window.x1 - src_bounds.x1;
+        kernel_args.src_y0 = window.y1 - src_bounds.y1;
+        kernel_args.dst_x0 = window.x1 - dst_bounds.x1;
+        kernel_args.dst_y0 = window.y1 - dst_bounds.y1;
+        kernel_args.gain = dyeline::exposure_gain(params);
+
+        std::string error;
+        if (args.isEnabledCudaRender) {
+            error = dyeline::cuda::exposure(args.pCudaStream,
+                                            static_cast<const float*>(src.getPixelData()),
+                                            static_cast<float*>(dst.getPixelData()), kernel_args);
+        } else {
+            error = dyeline::metal::exposure(args.pMetalCmdQ, src.getPixelData(),
+                                             dst.getPixelData(), kernel_args);
+        }
+        if (!error.empty()) {
+            setPersistentMessage(OFX::Message::eMessageError, "", error);
+            OFX::throwSuiteStatusException(kOfxStatFailed);
+        }
+    }
+
     dyeline::ExposureParams params_at(double time) const {
         dyeline::ExposureParams params;
         params.stops = exposure_->getValueAtTime(time);
@@ -139,6 +182,15 @@ void DyelineFactory::describe(OFX::ImageEffectDescriptor& desc) {
     desc.setRenderTwiceAlways(false);
     desc.setSupportsMultipleClipPARs(false);
     desc.setRenderThreadSafety(OFX::eRenderFullySafe);
+
+    // Offer the GPU paths this build has. Hosts without GPU support ignore these.
+    if (dyeline::cuda::available()) {
+        desc.setSupportsCudaRender(true);
+        desc.setSupportsCudaStream(true);
+    }
+    if (dyeline::metal::available()) {
+        desc.setSupportsMetalRender(true);
+    }
 }
 
 void DyelineFactory::describeInContext(OFX::ImageEffectDescriptor& desc,

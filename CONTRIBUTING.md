@@ -25,14 +25,22 @@ git commit -s
 | Folder | Contents |
 | --- | --- |
 | `core/` | The render core: tools and color math. Plain C++17, no OFX types. |
+| `core/include/dyeline/kernels/` | Per-pixel tool math shared by every backend (CPU, CUDA, Metal). |
+| `core/src/gpu/` | Thin CUDA and Metal wrappers that launch the shared kernels. |
 | `plugin/` | The OFX plugin: parameters, clips and the bridge to the core. |
 | `tests/` | Unit tests for the core and a plugin load test. |
 | `cmake/` | Build helpers: OpenFX SDK fetch and bundle layout. |
 
 ## Tests
 
-Every tool needs unit tests in `tests/` that pin its math. GPU backends, when they land, are
-tested against the CPU implementation.
+Every tool needs unit tests in `tests/` that pin its math. GPU backends are tested against the
+CPU result of the same shared kernel; those tests skip themselves on machines without that GPU.
+
+## Writing kernels
+
+Tool math lives in `core/include/dyeline/kernels/` and is compiled as C++, CUDA and Metal. Use only
+what `dl_kernel.h` provides plus basic C arithmetic: no standard library, templates or exceptions.
+Mark functions `DL_DEVICE` and buffer pointers `DL_GLOBAL`.
 
 ## Style
 

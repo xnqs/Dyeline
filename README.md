@@ -7,8 +7,9 @@ workflow of Magic Bullet Looks.
 > Dyeline is not affiliated with, endorsed by or connected to Maxon or Red Giant. "Magic Bullet
 > Looks" is their trademark and is named here only to describe what Dyeline is an alternative to.
 
-**Status:** early scaffolding (Milestone 0). The plugin currently offers one tool, Exposure, on the
-CPU. It is not useful for real work yet.
+**Status:** early scaffolding (Milestone 0). The plugin currently offers one tool, Exposure, rendered
+on the CPU, or on the GPU through CUDA (Windows, Linux) or Metal (macOS) when the host provides one.
+It is not useful for real work yet.
 
 ## Hosts
 
@@ -21,7 +22,8 @@ Dyeline targets OFX hosts on Windows, macOS and Linux. First targets:
 ## Building
 
 Requirements: CMake 3.24+, a C++17 compiler, and git (the OpenFX SDK and GoogleTest are fetched at
-configure time).
+configure time). The CUDA backend is built when a CUDA toolkit (nvcc) is found; turn it off with
+`-DDYELINE_ENABLE_CUDA=OFF`. The Metal backend is always built on macOS.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

@@ -1,8 +1,8 @@
 #include "dyeline/exposure.h"
+#include "dyeline/kernels/exposure_kernel.h"
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 
 namespace dyeline {
 
@@ -19,23 +19,14 @@ bool exposure_is_identity(const ExposureParams& params) {
 
 void apply_exposure_row(const float* src, float* dst, std::size_t pixel_count, int channels,
                         const ExposureParams& params) {
-    if (channels < 3) {
-        if (src != dst) {
-            std::memmove(dst, src, pixel_count * static_cast<std::size_t>(channels) * sizeof(float));
-        }
-        return;
-    }
-
-    const float gain = exposure_gain(params);
-    for (std::size_t i = 0; i < pixel_count; ++i) {
-        const float* in = src + i * static_cast<std::size_t>(channels);
-        float* out = dst + i * static_cast<std::size_t>(channels);
-        out[0] = in[0] * gain;
-        out[1] = in[1] * gain;
-        out[2] = in[2] * gain;
-        if (channels == 4) {
-            out[3] = in[3];
-        }
+    // The CPU path runs the same per-pixel kernel code as the GPU backends.
+    dl_exposure_args args{};
+    args.width = static_cast<int>(pixel_count);
+    args.height = 1;
+    args.channels = channels;
+    args.gain = exposure_gain(params);
+    for (int x = 0; x < args.width; ++x) {
+        dl_exposure_at(src, dst, x, 0, args);
     }
 }
 
