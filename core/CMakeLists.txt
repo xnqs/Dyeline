@@ -17,36 +17,15 @@ endif()
 # Metal backend: the shared kernel headers and kernels.metal are joined into one source
 # string, compiled at run time for the host's GPU.
 if(DYELINE_ENABLE_METAL)
-    set(metal_inputs
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/dyeline/kernels/dl_kernel.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/dyeline/kernels/exposure_kernel.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/metal/kernels.metal
-    )
-    set(metal_source "")
-    foreach(input IN LISTS metal_inputs)
-        file(READ ${input} text)
-        # Our own headers are inlined in order, so drop the quoted includes between them.
-        string(REGEX REPLACE "#include \"[^\"]*\"\n" "" text "${text}")
-        string(APPEND metal_source "${text}\n")
-    endforeach()
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${metal_inputs})
-
-    set(metal_file ${CMAKE_CURRENT_BINARY_DIR}/dyeline_kernels.metal)
-    file(WRITE ${metal_file} "${metal_source}")
-    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/metal_source.cpp
-        "// Generated from the shared kernel headers. Do not edit.\n"
-        "extern const char* const kDyelineMetalSource;\n"
-        "const char* const kDyelineMetalSource = R\"DLMETAL(\n${metal_source})DLMETAL\";\n")
-
-    target_sources(dyeline_core PRIVATE
-        src/gpu/metal/metal_backend.mm
-        ${CMAKE_CURRENT_BINARY_DIR}/metal_source.cpp
-    )
+    dyeline_embed_kernels(metal_source_cpp dyeline_kernels.metal kDyelineMetalSource
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/metal/kernels.metal)
+    target_sources(dyeline_core PRIVATE src/gpu/metal/metal_backend.mm ${metal_source_cpp})
     set_source_files_properties(src/gpu/metal/metal_backend.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(dyeline_core PUBLIC "-framework Metal" "-framework Foundation")
 
     # Compile the joined source once at build time too, so a kernel error fails the build
     # instead of the first render. Skipped when the Metal compiler is not installed.
+    set(metal_file ${CMAKE_CURRENT_BINARY_DIR}/dyeline_kernels.metal)
     execute_process(COMMAND xcrun -sdk macosx -f metal
         OUTPUT_VARIABLE metal_compiler OUTPUT_STRIP_TRAILING_WHITESPACE
         RESULT_VARIABLE metal_found ERROR_QUIET)
@@ -63,4 +42,16 @@ if(DYELINE_ENABLE_METAL)
     endif()
 else()
     target_sources(dyeline_core PRIVATE src/gpu/no_metal.cpp)
+endif()
+
+# OpenCL backend: the shared kernel headers and kernels.cl are joined into one source string,
+# built at run time for the host's device. Only the Khronos headers are needed to build; the
+# OpenCL library is loaded at run time.
+if(DYELINE_ENABLE_OPENCL)
+    dyeline_embed_kernels(opencl_source_cpp dyeline_kernels.cl kDyelineOpenCLSource
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/opencl/kernels.cl)
+    target_sources(dyeline_core PRIVATE src/gpu/opencl/opencl_backend.cpp ${opencl_source_cpp})
+    target_link_libraries(dyeline_core PRIVATE OpenCL::Headers ${CMAKE_DL_LIBS})
+else()
+    target_sources(dyeline_core PRIVATE src/gpu/no_opencl.cpp)
 endif()
