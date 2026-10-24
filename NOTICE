@@ -1,0 +1,16 @@
+Dyeline
+Copyright 2026 The Dyeline contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Film stock data, bundled looks and documentation are licensed under the Creative Commons
+Attribution 4.0 International license (CC-BY-4.0) unless a file says otherwise.
+
+Third-party software fetched at build time:
+
+- OpenFX SDK (https://github.com/AcademySoftwareFoundation/openfx), BSD-3-Clause.
+  The OFX headers and C++ support library are compiled into the plugin.
+- GoogleTest (https://github.com/google/googletest), BSD-3-Clause. Used for tests only.
+
+Dyeline is not affiliated with Maxon or Red Giant. "Magic Bullet" and "Magic Bullet Looks" are
+trademarks of their respective owners.
