@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <clocale>
+#include <filesystem>
 #include <string>
 
 namespace {
@@ -86,6 +87,55 @@ TEST(DesignerRoundTrip, FailsWhenTheDesignerRejectsTheLook) {
     const auto trip = dyeline::designer::run(DYELINE_DESIGNER_PATH, "not a look", {"--delay", "0"});
     EXPECT_EQ(trip.outcome, Outcome::Failed);
     EXPECT_NE(trip.error.find("code 3"), std::string::npos) << trip.error;
+}
+
+std::string temp_look_path(const char* name) {
+    const auto path = std::filesystem::temp_directory_path() / name;
+    std::filesystem::remove(path);
+    return path.string();
+}
+
+TEST(DesignerLookFile, WritesAndReadsBack) {
+    const std::string path = temp_look_path("dyeline-test-write.dyeline");
+    std::string error;
+    ASSERT_TRUE(dyeline::designer::write_look_file(path, params(2.0, 0.5), error)) << error;
+    ExposureParams read;
+    ASSERT_TRUE(dyeline::designer::read_look_file(path, read, error)) << error;
+    EXPECT_DOUBLE_EQ(read.stops, 2.0);
+    EXPECT_DOUBLE_EQ(read.strength, 0.5);
+    EXPECT_FALSE(std::filesystem::exists(path + ".partial"));
+    std::filesystem::remove(path);
+}
+
+TEST(DesignerLookFile, ReportsMissingAndForeignFiles) {
+    const std::string path = temp_look_path("dyeline-test-missing.dyeline");
+    ExposureParams read;
+    std::string error;
+    EXPECT_FALSE(dyeline::designer::read_look_file(path, read, error));
+    EXPECT_NE(error.find("could not open"), std::string::npos) << error;
+}
+
+TEST(DesignerRoundTrip, EditsTheLookFile) {
+    // Without a file yet, the designer starts from the look the plugin hands over.
+    const std::string path = temp_look_path("dyeline-test-edit.dyeline");
+    auto trip = dyeline::designer::run(DYELINE_DESIGNER_PATH,
+                                       dyeline::designer::format_look(params(0.5, 0.75)),
+                                       {"--delay", "0", "--file", path});
+    ASSERT_EQ(trip.outcome, Outcome::Applied) << trip.error;
+    ExposureParams saved;
+    std::string error;
+    ASSERT_TRUE(dyeline::designer::read_look_file(path, saved, error)) << error;
+    EXPECT_DOUBLE_EQ(saved.stops, 1.5);
+    EXPECT_DOUBLE_EQ(saved.strength, 0.75);
+
+    // Once it exists, the file wins over the handed-over look.
+    trip = dyeline::designer::run(DYELINE_DESIGNER_PATH,
+                                  dyeline::designer::format_look(params(-4.0, 1.0)),
+                                  {"--delay", "0", "--file", path});
+    ASSERT_EQ(trip.outcome, Outcome::Applied) << trip.error;
+    ASSERT_TRUE(dyeline::designer::read_look_file(path, saved, error)) << error;
+    EXPECT_DOUBLE_EQ(saved.stops, 2.5);
+    std::filesystem::remove(path);
 }
 
 }  // namespace

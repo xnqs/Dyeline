@@ -222,4 +222,36 @@ bool parse_look(const std::string& look, ExposureParams& params) {
     return true;
 }
 
+bool read_look_file(const std::string& path, ExposureParams& params, std::string& error) {
+    std::string text;
+    if (!read_file(fs::u8path(path), text)) {
+        error = "could not open the look file " + path;
+        return false;
+    }
+    if (!parse_look(text, params)) {
+        error = "the look file " + path + " is not a Dyeline look";
+        return false;
+    }
+    return true;
+}
+
+bool write_look_file(const std::string& path, const ExposureParams& params, std::string& error) {
+    // Write next to the file, then rename over it, so a render never reads half a look.
+    const fs::path target = fs::u8path(path);
+    fs::path partial = target;
+    partial += ".partial";
+    std::error_code ec;
+    if (!write_file(partial, format_look(params))) {
+        error = "could not write " + partial.string();
+        return false;
+    }
+    fs::rename(partial, target, ec);
+    if (ec) {
+        fs::remove(partial, ec);
+        error = "could not replace the look file " + path;
+        return false;
+    }
+    return true;
+}
+
 }  // namespace dyeline::designer

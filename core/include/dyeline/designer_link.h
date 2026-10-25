@@ -4,6 +4,9 @@
 // app, wait while the user edits it, and read the edited look back. The designer runs as its
 // own process, so a crash there never takes the host down.
 //
+// Hosts that never take parameter values back from a plugin (EffectCraft) use a look file
+// instead: the designer saves a .dyeline file and the plugin reads it when it renders.
+//
 // Milestone 0 spike: the look is a tiny flat JSON object holding the Exposure parameters.
 // The full chain format arrives with the tool chain in Milestone 1.
 
@@ -39,5 +42,9 @@ RoundTrip run(const std::string& designer_path, const std::string& look,
 // The spike's look format.
 std::string format_look(const ExposureParams& params);
 bool parse_look(const std::string& look, ExposureParams& params);
+
+// Reads or writes a .dyeline look file. On failure they return false and set `error`.
+bool read_look_file(const std::string& path, ExposureParams& params, std::string& error);
+bool write_look_file(const std::string& path, const ExposureParams& params, std::string& error);
 
 }  // namespace dyeline::designer
