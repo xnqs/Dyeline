@@ -17,6 +17,9 @@ struct AppOptions {
     std::shared_ptr<const Frame> frame;
     // Where the look's relative paths, such as LUT files, are found: the look file's folder.
     std::string base_dir;
+    // EffectCraft's control port (--effectcraft-port), or 0. Each save then makes EffectCraft
+    // render the look file again.
+    int effectcraft_port = 0;
     // True when the plugin waits for the result (--in/--out): the window offers Apply and
     // Cancel instead of Save and Close.
     bool round_trip = false;

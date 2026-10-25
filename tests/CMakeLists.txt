@@ -15,12 +15,16 @@ add_executable(dyeline_core_tests
     frame_file_test.cpp
     cube_test.cpp
     cube_export_test.cpp
+    effectcraft_test.cpp
     library_test.cpp
     look_test.cpp
     render_test.cpp
     tools_test.cpp
 )
 target_link_libraries(dyeline_core_tests PRIVATE Dyeline::core GTest::gtest_main)
+if(WIN32)
+    target_link_libraries(dyeline_core_tests PRIVATE ws2_32)  # the stand-in EffectCraft
+endif()
 dyeline_set_warnings(dyeline_core_tests)
 gtest_discover_tests(dyeline_core_tests)
 

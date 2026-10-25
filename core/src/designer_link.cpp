@@ -8,6 +8,7 @@
 #include <iterator>
 #include <sstream>
 #include <system_error>
+#include <thread>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -62,7 +63,6 @@ bool read_file(const fs::path& path, std::string& text) {
     return true;
 }
 
-// Starts the program and waits for it. Returns its exit code, or -1 with `error` set.
 #ifdef _WIN32
 std::wstring widen(const std::string& text) {
     if (text.empty()) {
@@ -97,7 +97,8 @@ std::wstring quote(const std::wstring& arg) {
     return out;
 }
 
-int run_and_wait(const std::vector<std::string>& argv, std::string& error) {
+// Starts the program. Returns its process handle, or null with `error` set.
+HANDLE spawn(const std::vector<std::string>& argv, std::string& error) {
     std::wstring command_line;
     for (const std::string& arg : argv) {
         if (!command_line.empty()) {
@@ -112,17 +113,28 @@ int run_and_wait(const std::vector<std::string>& argv, std::string& error) {
     if (!CreateProcessW(program.c_str(), command_line.data(), nullptr, nullptr, FALSE, 0,
                         nullptr, nullptr, &startup, &process)) {
         error = "could not start the designer (error " + std::to_string(GetLastError()) + ")";
-        return -1;
+        return nullptr;
     }
-    WaitForSingleObject(process.hProcess, INFINITE);
-    DWORD code = 0;
-    GetExitCodeProcess(process.hProcess, &code);
     CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
+    return process.hProcess;
+}
+
+int wait_for(HANDLE process, std::string& /*error*/) {
+    WaitForSingleObject(process, INFINITE);
+    DWORD code = 0;
+    GetExitCodeProcess(process, &code);
+    CloseHandle(process);
     return static_cast<int>(code);
 }
+
+using Process = HANDLE;
+const Process kNoProcess = nullptr;
 #else
-int run_and_wait(const std::vector<std::string>& argv, std::string& error) {
+using Process = pid_t;
+const Process kNoProcess = -1;
+
+// Starts the program. Returns its process id, or -1 with `error` set.
+pid_t spawn(const std::vector<std::string>& argv, std::string& error) {
     std::vector<char*> args;
     for (const std::string& arg : argv) {
         args.push_back(const_cast<char*>(arg.c_str()));
@@ -134,6 +146,10 @@ int run_and_wait(const std::vector<std::string>& argv, std::string& error) {
         error = "could not start the designer: " + std::generic_category().message(spawned);
         return -1;
     }
+    return pid;
+}
+
+int wait_for(pid_t pid, std::string& error) {
     int status = 0;
     while (waitpid(pid, &status, 0) < 0) {
         if (errno != EINTR) {
@@ -148,6 +164,12 @@ int run_and_wait(const std::vector<std::string>& argv, std::string& error) {
     return WEXITSTATUS(status);
 }
 #endif
+
+// Starts the program and waits for it. Returns its exit code, or -1 with `error` set.
+int run_and_wait(const std::vector<std::string>& argv, std::string& error) {
+    const Process process = spawn(argv, error);
+    return process == kNoProcess ? -1 : wait_for(process, error);
+}
 
 }  // namespace
 
@@ -183,6 +205,25 @@ RoundTrip run(const std::string& designer_path, const std::string& look,
     fs::remove(out_path, ignored);
     result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     return result;
+}
+
+bool start(const std::string& designer_path, const std::vector<std::string>& args,
+           std::function<void(int)> on_exit, std::string& error) {
+    std::vector<std::string> argv = {designer_path};
+    argv.insert(argv.end(), args.begin(), args.end());
+    const Process process = spawn(argv, error);
+    if (process == kNoProcess) {
+        return false;
+    }
+    // Waiting also reaps the process, so it never lingers as a zombie in the host.
+    std::thread([process, on_exit = std::move(on_exit)] {
+        std::string ignored;
+        const int code = wait_for(process, ignored);
+        if (on_exit) {
+            on_exit(code);
+        }
+    }).detach();
+    return true;
 }
 
 }  // namespace dyeline::designer

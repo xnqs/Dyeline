@@ -5,7 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <filesystem>
+#include <future>
 #include <string>
 
 namespace {
@@ -100,6 +102,30 @@ TEST(DesignerRoundTrip, EditsTheLookFile) {
     ASSERT_TRUE(dyeline::read_look_file(path, saved, error)) << error;
     EXPECT_DOUBLE_EQ(exposure_stops(saved), 2.5);
     std::filesystem::remove(path);
+}
+
+TEST(DesignerLaunch, StartsWithoutWaiting) {
+    // Open Designer: the designer edits the look file while the caller carries on, and the
+    // exit is reported on another thread.
+    const std::string path = temp_look_path("dyeline-test-start.dyeline");
+    std::promise<int> exited;
+    std::string error;
+    ASSERT_TRUE(dyeline::designer::start(DYELINE_DESIGNER_PATH, {"--delay", "0", "--file", path},
+                                         [&exited](int code) { exited.set_value(code); }, error))
+        << error;
+    std::future<int> code = exited.get_future();
+    ASSERT_EQ(code.wait_for(std::chrono::seconds(30)), std::future_status::ready);
+    EXPECT_EQ(code.get(), dyeline::designer::kExitApplied);
+    Look saved;
+    ASSERT_TRUE(dyeline::read_look_file(path, saved, error)) << error;
+    EXPECT_DOUBLE_EQ(exposure_stops(saved), 1.0);
+    std::filesystem::remove(path);
+}
+
+TEST(DesignerLaunch, ReportsAMissingDesigner) {
+    std::string error;
+    EXPECT_FALSE(dyeline::designer::start("/no/such/dyeline-designer", {}, nullptr, error));
+    EXPECT_NE(error, "");
 }
 
 }  // namespace

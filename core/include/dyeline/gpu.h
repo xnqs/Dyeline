@@ -36,6 +36,18 @@ std::string render_plan(void* command_queue, const void* src_buffer, void* dst_b
                         const RenderPlan& plan, const float* table, std::size_t table_floats,
                         bool wait = false);
 
+// Dyeline's own Metal device, the system's default GPU, for hosts that render on the CPU
+// (EffectCraft, Natron).
+// `src` and `dst` are host memory holding the plan's source and destination bounds, `src_floats`
+// and `dst_floats` long. The frame is uploaded, rendered and read back before this returns, and
+// only the plan's window is written into `dst`. Renders from several threads take turns.
+std::string render_plan_own_device(const float* src, std::size_t src_floats, float* dst,
+                                   std::size_t dst_floats, const RenderPlan& plan,
+                                   const float* table, std::size_t table_floats);
+
+// The name of that device, or empty with `error` saying why there is none.
+std::string own_device_name(std::string& error);
+
 }  // namespace metal
 
 namespace opencl {
@@ -48,6 +60,18 @@ bool available();
 std::string render_plan(void* command_queue, const void* src_buffer, void* dst_buffer,
                         const RenderPlan& plan, const float* table, std::size_t table_floats,
                         bool wait = false);
+
+// Dyeline's own OpenCL device, for hosts that render on the CPU (EffectCraft, Natron): the
+// first OpenCL GPU found, or any device when DYELINE_OPENCL_DEVICE=any.
+// `src` and `dst` are host memory holding the plan's source and destination bounds, `src_floats`
+// and `dst_floats` long. The frame is uploaded, rendered and read back before this returns, and
+// only the plan's window is written into `dst`. Renders from several threads take turns.
+std::string render_plan_own_device(const float* src, std::size_t src_floats, float* dst,
+                                   std::size_t dst_floats, const RenderPlan& plan,
+                                   const float* table, std::size_t table_floats);
+
+// The name of that device, or empty with `error` saying why there is none.
+std::string own_device_name(std::string& error);
 
 }  // namespace opencl
 

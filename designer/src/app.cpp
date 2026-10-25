@@ -3,11 +3,13 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <cstdio>
 #include <filesystem>
+#include <future>
 #include <map>
 #include <set>
 #include <mutex>
@@ -16,6 +18,7 @@
 
 #include "dyeline/color.h"
 #include "dyeline/cube_export.h"
+#include "dyeline/effectcraft.h"
 #include "dyeline/library.h"
 #include "dyeline/tools.h"
 #include "imgui.h"
@@ -174,6 +177,8 @@ private:
     void draw_export_popup();
     void export_cube(const std::string& path);
     bool save();
+    void refresh_host();
+    void poll_refresh();
 
     LookEditor& editor_;
     const AppOptions& options_;
@@ -211,6 +216,10 @@ private:
     int view_ = 0;  // 0 auto, 1 as is, 2 linear to sRGB
     std::size_t selected_ = 0;
     std::string status_;
+    // Asking EffectCraft to render the saved look again, and whether to ask once more when
+    // that's done because the look was saved again meanwhile.
+    std::future<effectcraft::RefreshResult> refresh_;
+    bool refresh_again_ = false;
     bool open_close_prompt_ = false;
     bool done_ = false;
     AppResult result_ = AppResult::Cancelled;
@@ -218,6 +227,7 @@ private:
 
 bool App::frame() {
     apply_picked_file();
+    poll_refresh();
     handle_shortcuts();
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -1066,7 +1076,41 @@ bool App::save() {
     }
     editor_.mark_saved();
     status_ = "Saved " + options_.file_path;
+    refresh_host();
     return true;
+}
+
+// EffectCraft only renders an effect again when one of its values changes, so after a save
+// the designer bumps Reload Look File for it, in the background.
+void App::refresh_host() {
+    if (options_.effectcraft_port <= 0) {
+        return;
+    }
+    if (refresh_.valid()) {
+        refresh_again_ = true;
+        return;
+    }
+    refresh_ = std::async(std::launch::async, effectcraft::refresh_look_file,
+                          options_.effectcraft_port, options_.file_path);
+}
+
+void App::poll_refresh() {
+    if (!refresh_.valid() ||
+        refresh_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+        return;
+    }
+    const effectcraft::RefreshResult result = refresh_.get();
+    if (!result.error.empty()) {
+        status_ = "Saved, but couldn't update EffectCraft: " + result.error;
+    } else if (result.refreshed == 0) {
+        status_ = "Saved. No effect in EffectCraft uses this look file";
+    } else {
+        status_ = "Saved and updated in EffectCraft";
+    }
+    if (refresh_again_) {
+        refresh_again_ = false;
+        refresh_host();
+    }
 }
 
 }  // namespace
@@ -1160,6 +1204,13 @@ AppResult run_app(LookEditor& editor, const AppOptions& options, std::string& er
         result = AppResult::Applied;
         if (!options.file_path.empty() && !write_look_file(options.file_path, editor.look(), error)) {
             result = AppResult::Failed;
+        } else if (!options.file_path.empty() && options.effectcraft_port > 0) {
+            const effectcraft::RefreshResult refreshed =
+                effectcraft::refresh_look_file(options.effectcraft_port, options.file_path);
+            if (!refreshed.error.empty()) {
+                error = refreshed.error;
+                result = AppResult::Failed;
+            }
         }
     }
 

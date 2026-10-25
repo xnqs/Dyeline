@@ -7,6 +7,7 @@
 // Hosts that never take parameter values back from a plugin (EffectCraft) use a look file
 // instead: the designer saves a .dyeline file and the plugin reads it when it renders.
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -37,5 +38,11 @@ std::string temp_path(const char* suffix);
 // <in> holds `look`; on Applied, <out> holds the edited look. Both files are removed after.
 RoundTrip run(const std::string& designer_path, const std::string& look,
               const std::vector<std::string>& extra_args = {});
+
+// Starts `designer_path args...` without waiting for it, for Open Designer: the host keeps
+// running while the designer edits a look file. `on_exit` is called on another thread with the
+// designer's exit code, or -1 if it crashed. Returns false with `error` set if it didn't start.
+bool start(const std::string& designer_path, const std::vector<std::string>& args,
+           std::function<void(int)> on_exit, std::string& error);
 
 }  // namespace dyeline::designer

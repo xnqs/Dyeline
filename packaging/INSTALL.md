@@ -8,8 +8,8 @@ bundled looks inside it. Install it into your OFX plugin folder and restart your
 ## Windows
 
 Run `Dyeline-<version>-windows-x64-setup.exe`. It installs into
-`C:\Program Files\Common Files\OFX\Plugins` and adds Dyeline to Apps > Installed apps, where
-you can uninstall it. From the .zip instead, copy `Dyeline.ofx.bundle` into that folder.
+`C:\Program Files\Common Files\OFX\Plugins`, puts **Dyeline Look Designer** in the Start
+menu, and adds Dyeline to Apps > Installed apps, where you can uninstall it. From the .zip instead, copy `Dyeline.ofx.bundle` into that folder.
 
 ## macOS
 
@@ -28,6 +28,9 @@ cd Dyeline-<version>-linux-x86_64
 ./install.sh ~/ofx-plugins      # or into a folder of your own (add it to OFX_PLUGIN_PATH)
 ./install.sh --uninstall        # removes it again
 ```
+
+The installer also adds **Dyeline Look Designer** to your desktop's application menu, for your
+user only.
 
 The Look Designer needs a desktop session (X11 or Wayland). The GPU backends need the
 vendor's driver: CUDA for NVIDIA, or an OpenCL driver (for AMD and Intel, Mesa's rusticl:
