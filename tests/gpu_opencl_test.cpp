@@ -1,4 +1,4 @@
-// Runs Exposure through the OpenCL backend and compares it with the CPU reference. Uses the
+// Runs a look's chain through the OpenCL backend and compares it with the CPU reference. Uses the
 // first OpenCL device found (a GPU, or a CPU driver such as PoCL in CI). Skipped when no
 // OpenCL library or device is installed.
 
@@ -59,8 +59,9 @@ TEST(OpenCLBackend, MatchesCpuReference) {
     const int width = 37;
     const int height = 23;
     const std::vector<float> src = dyeline::test::make_frame(width, height);
-    const dl_exposure_args args = dyeline::test::window_args(width, height, 2.5f);
-    const std::vector<float> expected = dyeline::test::cpu_reference(src, args);
+    const dl_image_args args = dyeline::test::window_args(width, height);
+    const dl_chain chain = dyeline::test::test_chain();
+    const std::vector<float> expected = dyeline::test::cpu_reference(src, args, chain);
 
     const std::size_t bytes = src.size() * sizeof(float);
     std::vector<float> result(src.size(), 0.0f);
@@ -71,7 +72,7 @@ TEST(OpenCLBackend, MatchesCpuReference) {
                                     result.data(), &err);
     ASSERT_EQ(err, CL_SUCCESS);
 
-    EXPECT_EQ(dyeline::opencl::exposure(queue, d_src, d_dst, args, /*wait=*/true), "");
+    EXPECT_EQ(dyeline::opencl::render_chain(queue, d_src, d_dst, args, chain, /*wait=*/true), "");
 
     ASSERT_EQ(cl->EnqueueReadBuffer(queue, d_dst, CL_TRUE, 0, bytes, result.data(), 0, nullptr,
                                     nullptr),
@@ -82,7 +83,7 @@ TEST(OpenCLBackend, MatchesCpuReference) {
     cl->ReleaseContext(context);
 
     for (std::size_t i = 0; i < result.size(); ++i) {
-        ASSERT_NEAR(result[i], expected[i], 1e-6f) << "index " << i;
+        ASSERT_NEAR(result[i], expected[i], dyeline::test::tolerance(expected[i])) << "index " << i;
     }
 }
 

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/xnqs/Dyeline/schema/dyeline-look-1.schema.json",
+  "title": "Dyeline look",
+  "description": "A Dyeline look (.dyeline file): a chain of tools plus its color settings. The same JSON is stored in the plugin's hidden parameter. Readers keep fields they do not know, and bypass tools they do not know without dropping them.",
+  "type": "object",
+  "required": ["formatVersion"],
+  "properties": {
+    "formatVersion": {
+      "description": "Version of this file format. Readers refuse versions newer than they know.",
+      "const": 1
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "author": {"type": "string"},
+        "license": {"type": "string", "description": "An SPDX license identifier, such as CC-BY-4.0."}
+      }
+    },
+    "color": {
+      "type": "object",
+      "properties": {
+        "mode": {"enum": ["tone", "full"], "default": "tone"},
+        "input": {"type": "string", "default": "rec709", "description": "The footage's color space."},
+        "output": {"type": "string", "default": "same", "description": "The color space to output; \"same\" means the input space."}
+      }
+    },
+    "chain": {
+      "description": "The tools, in the order they run.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/tool"}
+    }
+  },
+  "$defs": {
+    "tool": {
+      "type": "object",
+      "required": ["tool"],
+      "properties": {
+        "tool": {"type": "string", "description": "The tool's id, such as \"exposure\". Ids never change once released."},
+        "toolVersion": {"type": "integer", "minimum": 1, "default": 1, "description": "Version of the tool's parameters. Older versions are migrated on load; a newer one is bypassed."},
+        "enabled": {"type": "boolean", "default": true},
+        "pinned": {"type": "boolean", "default": false},
+        "strength": {"type": "number", "minimum": 0, "maximum": 1, "default": 1},
+        "params": {"type": "object", "description": "The tool's own parameters. Missing values take the tool's defaults; values out of range are clamped."}
+      }
+    }
+  }
+}

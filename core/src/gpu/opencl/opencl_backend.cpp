@@ -133,8 +133,8 @@ bool available() {
     return true;
 }
 
-std::string exposure(void* command_queue, const void* src_buffer, void* dst_buffer,
-                     const dl_exposure_args& args, bool wait) {
+std::string render_chain(void* command_queue, const void* src_buffer, void* dst_buffer,
+                         const dl_image_args& args, const dl_chain& chain, bool wait) {
     if (args.width <= 0 || args.height <= 0) {
         return {};
     }
@@ -164,27 +164,37 @@ std::string exposure(void* command_queue, const void* src_buffer, void* dst_buff
         return error;
     }
 
-    // A kernel object per render: kernel arguments are not safe to set from several threads.
-    cl_kernel kernel = cl->CreateKernel(program, "dl_exposure_kernel", &err);
+    // The chain goes in a small constant buffer: it can exceed the 1 KB of kernel arguments
+    // OpenCL 1.2 guarantees. Released right away; the queue keeps it until the work is done.
+    cl_mem chain_buffer = cl->CreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                           sizeof(chain), const_cast<dl_chain*>(&chain), &err);
     if (err != CL_SUCCESS) {
-        return cl_error("Could not create the OpenCL Exposure kernel", err);
+        return cl_error("Could not upload the look to OpenCL", err);
+    }
+    // A kernel object per render: kernel arguments are not safe to set from several threads.
+    cl_kernel kernel = cl->CreateKernel(program, "dl_chain_kernel", &err);
+    if (err != CL_SUCCESS) {
+        cl->ReleaseMemObject(chain_buffer);
+        return cl_error("Could not create the OpenCL kernel", err);
     }
     err = cl->SetKernelArg(kernel, 0, sizeof(cl_mem), &src);
     if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 1, sizeof(cl_mem), &dst);
     if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 2, sizeof(args), &args);
+    if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 3, sizeof(cl_mem), &chain_buffer);
     if (err == CL_SUCCESS) {
         const std::size_t global[2] = {static_cast<std::size_t>(args.width),
                                        static_cast<std::size_t>(args.height)};
         err = cl->EnqueueNDRangeKernel(queue, kernel, 2, nullptr, global, nullptr, 0, nullptr, nullptr);
     }
-    cl->ReleaseKernel(kernel);  // the queue keeps it alive until the work is done
+    cl->ReleaseKernel(kernel);
+    cl->ReleaseMemObject(chain_buffer);
     if (err != CL_SUCCESS) {
-        return cl_error("OpenCL Exposure kernel failed to launch", err);
+        return cl_error("OpenCL kernel failed to launch", err);
     }
     if (wait) {
         err = cl->Finish(queue);
         if (err != CL_SUCCESS) {
-            return cl_error("OpenCL Exposure kernel failed", err);
+            return cl_error("OpenCL kernel failed", err);
         }
     }
     return {};

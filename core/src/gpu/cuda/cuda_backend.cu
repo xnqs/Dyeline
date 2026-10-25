@@ -5,15 +5,17 @@
 #include <string>
 
 #include "dyeline/gpu.h"
-#include "dyeline/kernels/exposure_kernel.h"
+#include "dyeline/kernels/chain_kernel.h"
 
 namespace {
 
-__global__ void dl_exposure_kernel(const float* src, float* dst, dl_exposure_args args) {
+// The chain is passed by value (about 1.2 KB, well inside CUDA's 4 KB parameter limit), so
+// renders on different streams never share it.
+__global__ void dl_chain_kernel(const float* src, float* dst, dl_image_args args, dl_chain chain) {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
     if (x < args.width && y < args.height) {
-        dl_exposure_at(src, dst, x, y, args);
+        dl_chain_at(src, dst, x, y, args, &chain);
     }
 }
 
@@ -29,23 +31,23 @@ bool available() {
     return true;
 }
 
-std::string exposure(void* stream, const float* src, float* dst, const dl_exposure_args& args,
-                     bool wait) {
+std::string render_chain(void* stream, const float* src, float* dst, const dl_image_args& args,
+                         const dl_chain& chain, bool wait) {
     if (args.width <= 0 || args.height <= 0) {
         return {};
     }
     auto* cuda_stream = static_cast<cudaStream_t>(stream);
     const dim3 block(16, 16);
     const dim3 grid((args.width + block.x - 1) / block.x, (args.height + block.y - 1) / block.y);
-    dl_exposure_kernel<<<grid, block, 0, cuda_stream>>>(src, dst, args);
+    dl_chain_kernel<<<grid, block, 0, cuda_stream>>>(src, dst, args, chain);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
-        return error_text("Exposure kernel launch failed", err);
+        return error_text("Dyeline kernel launch failed", err);
     }
     if (wait) {
         err = cudaStreamSynchronize(cuda_stream);
         if (err != cudaSuccess) {
-            return error_text("Exposure kernel failed", err);
+            return error_text("Dyeline kernel failed", err);
         }
     }
     return {};

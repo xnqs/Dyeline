@@ -8,7 +8,7 @@ bool available() {
     return false;
 }
 
-std::string exposure(void*, const float*, float*, const dl_exposure_args&, bool) {
+std::string render_chain(void*, const float*, float*, const dl_image_args&, const dl_chain&, bool) {
     return "Dyeline was built without CUDA support";
 }
 

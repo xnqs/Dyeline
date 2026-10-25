@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
-#include <locale>
 #include <sstream>
 #include <system_error>
 
@@ -147,24 +146,6 @@ int run_and_wait(const std::vector<std::string>& argv, std::string& error) {
 }
 #endif
 
-// Finds `"key": <number>` in a flat JSON object. Numbers are read and written in the
-// classic "C" locale, since the host may have set one that uses decimal commas.
-bool find_number(const std::string& text, const char* key, double& value) {
-    const std::string needle = std::string("\"") + key + "\"";
-    std::size_t at = text.find(needle);
-    if (at == std::string::npos) {
-        return false;
-    }
-    at = text.find(':', at + needle.size());
-    if (at == std::string::npos) {
-        return false;
-    }
-    std::istringstream stream(text.substr(at + 1));
-    stream.imbue(std::locale::classic());
-    stream >> value;
-    return !stream.fail();
-}
-
 }  // namespace
 
 RoundTrip run(const std::string& designer_path, const std::string& look,
@@ -199,59 +180,6 @@ RoundTrip run(const std::string& designer_path, const std::string& look,
     fs::remove(out_path, ignored);
     result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     return result;
-}
-
-std::string format_look(const ExposureParams& params) {
-    std::ostringstream text;
-    text.imbue(std::locale::classic());
-    text.precision(17);
-    text << "{\"version\": 1, \"exposure\": " << params.stops << ", \"strength\": "
-         << params.strength << "}\n";
-    return text.str();
-}
-
-bool parse_look(const std::string& look, ExposureParams& params) {
-    double version = 0.0;
-    ExposureParams parsed;
-    if (!find_number(look, "version", version) || version != 1.0 ||
-        !find_number(look, "exposure", parsed.stops) ||
-        !find_number(look, "strength", parsed.strength)) {
-        return false;
-    }
-    params = parsed;
-    return true;
-}
-
-bool read_look_file(const std::string& path, ExposureParams& params, std::string& error) {
-    std::string text;
-    if (!read_file(fs::u8path(path), text)) {
-        error = "could not open the look file " + path;
-        return false;
-    }
-    if (!parse_look(text, params)) {
-        error = "the look file " + path + " is not a Dyeline look";
-        return false;
-    }
-    return true;
-}
-
-bool write_look_file(const std::string& path, const ExposureParams& params, std::string& error) {
-    // Write next to the file, then rename over it, so a render never reads half a look.
-    const fs::path target = fs::u8path(path);
-    fs::path partial = target;
-    partial += ".partial";
-    std::error_code ec;
-    if (!write_file(partial, format_look(params))) {
-        error = "could not write " + partial.string();
-        return false;
-    }
-    fs::rename(partial, target, ec);
-    if (ec) {
-        fs::remove(partial, ec);
-        error = "could not replace the look file " + path;
-        return false;
-    }
-    return true;
 }
 
 }  // namespace dyeline::designer

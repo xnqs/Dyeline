@@ -3,13 +3,13 @@
 // builds for the host's OpenCL device the first time it renders.
 
 #include "dl_kernel.h"
-#include "exposure_kernel.h"
+#include "chain_kernel.h"
 
-__kernel void dl_exposure_kernel(__global const float* src, __global float* dst,
-                                 struct dl_exposure_args args) {
+__kernel void dl_chain_kernel(__global const float* src, __global float* dst,
+                              struct dl_image_args args, __constant struct dl_chain* chain) {
     const int x = (int)get_global_id(0);
     const int y = (int)get_global_id(1);
     if (x < args.width && y < args.height) {
-        dl_exposure_at(src, dst, x, y, args);
+        dl_chain_at(src, dst, x, y, args, chain);
     }
 }

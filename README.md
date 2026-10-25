@@ -7,11 +7,32 @@ workflow of Magic Bullet Looks.
 > Dyeline is not affiliated with, endorsed by or connected to Maxon or Red Giant. "Magic Bullet
 > Looks" is their trademark and is named here only to describe what Dyeline is an alternative to.
 
-**Status:** early scaffolding (Milestone 0). The plugin currently offers one tool, Exposure, rendered
-on the CPU, or on the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS)
-when the host provides one.
-It also carries a spike of the Look Designer round trip (see below). It is not useful for real
-work yet.
+**Status:** Milestone 1 in progress. The plugin renders a look, a chain of tools, on the CPU or on
+the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS) when the host
+provides one. Exposure is the only tool so far, and the Look Designer is still a stand-in (see
+below). It is not useful for real work yet.
+
+## Looks
+
+A look is a chain of tools plus its color settings, saved as a `.dyeline` file: UTF-8 JSON
+described by [schema/dyeline-look-1.schema.json](schema/dyeline-look-1.schema.json). The plugin
+keeps the same JSON in a hidden parameter, so a preset and a clip's grade are one thing.
+
+```json
+{
+  "formatVersion": 1,
+  "meta": {"name": "Brighter", "tags": [], "author": "", "license": "CC-BY-4.0"},
+  "color": {"mode": "tone", "input": "rec709", "output": "same"},
+  "chain": [
+    {"tool": "exposure", "toolVersion": 1, "enabled": true, "pinned": false, "strength": 1.0,
+     "params": {"stops": 1.0}}
+  ]
+}
+```
+
+Each tool versions its own parameters, so old looks keep loading as tools change. A tool this
+build doesn't know (or a newer version of one) is kept in the look and bypassed, with a warning,
+never dropped. In the host, **Strength** blends the whole look with the untouched image.
 
 ## Hosts
 
@@ -55,15 +76,15 @@ plugin folder, or run `cmake --install build` to copy it to the standard locatio
 
 ## Trying the designer round trip
 
-The bundle ships `dyeline-designer` next to the plugin binary. In Milestone 0 it is a stub with
-no window: it raises Exposure by one stop and hands the look back. There are two ways to link it
-to the plugin, depending on the host.
+The bundle ships `dyeline-designer` next to the plugin binary. For now it is a stub with no
+window: it raises the look's Exposure tool by one stop (adding one if the look has none) and
+hands the look back. There are two ways to link it to the plugin, depending on the host.
 
 **Edit Look (Natron, Resolve).** Click **Edit Look...** in the plugin's controls. The host
-freezes while the designer runs (two seconds), then Exposure goes up by 1 and the **Designer**
-line reports how long the round trip took. Undo restores the old values in one step. To check
-how a host copes with a long edit, start it with `DYELINE_DESIGNER_DELAY` set to the number of
-seconds the stub should wait, for example `DYELINE_DESIGNER_DELAY=60 natron`.
+freezes while the designer runs (two seconds), then the image gets a stop brighter and the
+**Designer** line reports how long the round trip took. Undo restores the old look in one step.
+To check how a host copes with a long edit, start it with `DYELINE_DESIGNER_DELAY` set to the
+number of seconds the stub should wait, for example `DYELINE_DESIGNER_DELAY=60 natron`.
 
 **Look File (EffectCraft, and any host).** Some hosts never take parameter values back from a
 plugin, so Edit Look does nothing there. Instead, set **Look File** to a `.dyeline` file and
@@ -73,9 +94,10 @@ edit that file with the designer:
 dyeline-designer --file ~/looks/test.dyeline   # creates it, or adds a stop each run
 ```
 
-While Look File is set, the file's look replaces the Exposure and Strength sliders, and the
-plugin re-reads the file whenever it changes. Clicking Edit Look with a look file set edits the
-file too.
+While Look File is set, the file's look is rendered instead of the one saved with the project,
+and the plugin re-reads the file whenever it changes. Hosts that cache frames by parameter
+values alone, such as EffectCraft, keep showing the old frame after the file changes: add one to
+**Reload Look File** to make them render again.
 
 ## Contributing
 

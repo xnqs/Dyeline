@@ -15,7 +15,7 @@ extern const char* const kDyelineMetalSource;
 namespace {
 
 struct Pipelines {
-    id<MTLComputePipelineState> exposure = nil;
+    id<MTLComputePipelineState> chain = nil;
 };
 
 // One set of compiled pipelines per Metal device, built on first use.
@@ -39,13 +39,13 @@ std::string pipelines_for(id<MTLDevice> device, Pipelines& out) {
             return std::string("Metal kernel compile failed: ") +
                    (error ? error.localizedDescription.UTF8String : "unknown error");
         }
-        id<MTLFunction> function = [library newFunctionWithName:@"dl_exposure_kernel"];
+        id<MTLFunction> function = [library newFunctionWithName:@"dl_chain_kernel"];
         if (function == nil) {
-            return "Metal kernel dl_exposure_kernel not found";
+            return "Metal kernel dl_chain_kernel not found";
         }
         Pipelines pipelines;
-        pipelines.exposure = [device newComputePipelineStateWithFunction:function error:&error];
-        if (pipelines.exposure == nil) {
+        pipelines.chain = [device newComputePipelineStateWithFunction:function error:&error];
+        if (pipelines.chain == nil) {
             return std::string("Metal pipeline creation failed: ") +
                    (error ? error.localizedDescription.UTF8String : "unknown error");
         }
@@ -63,8 +63,8 @@ bool available() {
     return true;
 }
 
-std::string exposure(void* command_queue, const void* src_buffer, void* dst_buffer,
-                     const dl_exposure_args& args, bool wait) {
+std::string render_chain(void* command_queue, const void* src_buffer, void* dst_buffer,
+                         const dl_image_args& args, const dl_chain& chain, bool wait) {
     if (args.width <= 0 || args.height <= 0) {
         return {};
     }
@@ -83,13 +83,14 @@ std::string exposure(void* command_queue, const void* src_buffer, void* dst_buff
     @autoreleasepool {
         id<MTLCommandBuffer> commands = [queue commandBuffer];
         id<MTLComputeCommandEncoder> encoder = [commands computeCommandEncoder];
-        [encoder setComputePipelineState:pipelines.exposure];
+        [encoder setComputePipelineState:pipelines.chain];
         [encoder setBuffer:src offset:0 atIndex:0];
         [encoder setBuffer:dst offset:0 atIndex:1];
         [encoder setBytes:&args length:sizeof(args) atIndex:2];
+        [encoder setBytes:&chain length:sizeof(chain) atIndex:3];  // under setBytes' 4 KB limit
 
-        const NSUInteger tw = pipelines.exposure.threadExecutionWidth;
-        const NSUInteger th = pipelines.exposure.maxTotalThreadsPerThreadgroup / tw;
+        const NSUInteger tw = pipelines.chain.threadExecutionWidth;
+        const NSUInteger th = pipelines.chain.maxTotalThreadsPerThreadgroup / tw;
         const MTLSize group = MTLSizeMake(tw, th, 1);
         const MTLSize groups = MTLSizeMake((static_cast<NSUInteger>(args.width) + tw - 1) / tw,
                                            (static_cast<NSUInteger>(args.height) + th - 1) / th, 1);
@@ -99,7 +100,7 @@ std::string exposure(void* command_queue, const void* src_buffer, void* dst_buff
         if (wait) {
             [commands waitUntilCompleted];
             if (commands.error != nil) {
-                return std::string("Metal exposure failed: ") +
+                return std::string("Metal render failed: ") +
                        commands.error.localizedDescription.UTF8String;
             }
         }

@@ -1,6 +1,6 @@
 // Stand-in for the Look Designer app, for the Milestone 0 round-trip spike. It has no window:
-// it reads the look the plugin hands over, waits as if the user were editing, raises Exposure
-// by one stop and hands the look back. The real designer (Dear ImGui on SDL3) replaces it in
+// it reads the look the plugin hands over, waits as if the user were editing, raises the
+// look's Exposure tool by one stop (adding one if there is none) and hands the look back. The real designer (Dear ImGui on SDL3) replaces it in
 // Milestone 1 and keeps this command line.
 //
 // Usage:
@@ -25,6 +25,7 @@
 #include <thread>
 
 #include "dyeline/designer_link.h"
+#include "dyeline/look.h"
 
 int main(int argc, char** argv) {
     std::string in_path;
@@ -55,21 +56,19 @@ int main(int argc, char** argv) {
     }
 
     // The look to start from: the look file when it exists, else what the plugin handed over,
-    // else a neutral look.
-    dyeline::ExposureParams params;
+    // else an empty look.
+    dyeline::Look look;
     std::string error;
-    std::ifstream file_check(file_path);
-    if (!file_path.empty() && file_check) {
-        file_check.close();
-        if (!dyeline::designer::read_look_file(file_path, params, error)) {
+    if (!file_path.empty() && std::ifstream(file_path)) {
+        if (!dyeline::read_look_file(file_path, look, error)) {
             std::cerr << "dyeline-designer: " << error << "\n";
             return 3;
         }
     } else if (!in_path.empty()) {
         std::ifstream in(in_path, std::ios::binary);
-        const std::string look((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        if (!dyeline::designer::parse_look(look, params)) {
-            std::cerr << "dyeline-designer: could not read the look in " << in_path << "\n";
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (!dyeline::parse_look(text, look, error)) {
+            std::cerr << "dyeline-designer: " << error << "\n";
             return 3;
         }
     }
@@ -79,18 +78,31 @@ int main(int argc, char** argv) {
         return dyeline::designer::kExitCancelled;
     }
 
-    params.stops = std::min(params.stops + 1.0, dyeline::kExposureMaxStops);
-    if (!file_path.empty() && !dyeline::designer::write_look_file(file_path, params, error)) {
-        std::cerr << "dyeline-designer: " << error << "\n";
-        return 4;
+    // The stand-in edit: one more stop on the first Exposure tool.
+    auto exposure = std::find_if(look.chain.begin(), look.chain.end(),
+                                 [](const dyeline::ToolEntry& e) { return e.tool == "exposure"; });
+    if (exposure == look.chain.end()) {
+        dyeline::ToolEntry entry;
+        entry.tool = "exposure";
+        entry.params["stops"] = 0.0;
+        look.chain.push_back(entry);
+        exposure = look.chain.end() - 1;
     }
+    const double stops = exposure->params.value("stops", 0.0);
+    exposure->params["stops"] = std::min(stops + 1.0, 16.0);
+
     if (!file_path.empty()) {
-        std::cout << "Saved " << file_path << ": exposure " << params.stops << " stops\n";
+        if (!dyeline::write_look_file(file_path, look, error)) {
+            std::cerr << "dyeline-designer: " << error << "\n";
+            return 4;
+        }
+        std::cout << "Saved " << file_path << ": exposure " << exposure->params["stops"].get<double>()
+                  << " stops\n";
     }
     if (out_path.empty()) {
         return dyeline::designer::kExitApplied;
     }
     std::ofstream out(out_path, std::ios::binary);
-    out << dyeline::designer::format_look(params);
+    out << dyeline::write_look(look);
     return out ? dyeline::designer::kExitApplied : 4;
 }
