@@ -5,7 +5,7 @@
 // as Metal Shading Language and as OpenCL C. Kernel headers may use only what this
 // file defines plus basic C arithmetic: no standard library, no exceptions, no templates.
 // DL_GLOBAL marks image buffers and table data, DL_CONSTANT the small read-only chain
-// description. The dl_
+// description, DL_PRIVATE pointers to a function's own variables. The dl_
 // math functions are single precision on every backend.
 #ifndef DYELINE_KERNELS_DL_KERNEL_H
 #define DYELINE_KERNELS_DL_KERNEL_H
@@ -15,6 +15,7 @@
 #define DL_DEVICE __device__ __forceinline__
 #define DL_GLOBAL
 #define DL_CONSTANT
+#define DL_PRIVATE
 typedef float4 dl_float4;
 #define dl_make_float4(x, y, z, w) make_float4((x), (y), (z), (w))
 #define dl_pow(x, y) powf((x), (y))
@@ -30,6 +31,7 @@ typedef float4 dl_float4;
 #define DL_DEVICE inline
 #define DL_GLOBAL device
 #define DL_CONSTANT constant
+#define DL_PRIVATE thread
 typedef float4 dl_float4;
 #define dl_make_float4(x, y, z, w) float4((x), (y), (z), (w))
 // The library is compiled without fast math (metal_backend.mm), so these are the precise forms.
@@ -46,6 +48,7 @@ typedef float4 dl_float4;
 #define DL_DEVICE
 #define DL_GLOBAL __global
 #define DL_CONSTANT __constant
+#define DL_PRIVATE
 typedef float4 dl_float4;
 #define dl_make_float4(x, y, z, w) ((float4)((x), (y), (z), (w)))
 #define dl_pow(x, y) pow((x), (y))
@@ -62,6 +65,7 @@ typedef float4 dl_float4;
 #define DL_DEVICE inline
 #define DL_GLOBAL
 #define DL_CONSTANT
+#define DL_PRIVATE
 struct dl_float4 {
     float x, y, z, w;
 };
@@ -90,7 +94,9 @@ DL_DEVICE float dl_smoothstep(float edge0, float edge1, float x) {
 // the host's canonical coordinates: full-resolution pixels, made square by the pixel aspect
 // ratio, with y up. So a look renders the same at any render scale.
 struct dl_place {
-    float x;  // the pixel's center
+    int px;   // the pixel, in the host's pixel coordinates
+    int py;
+    float x;  // the pixel's center, in canonical coordinates
     float y;
     float frame_left;  // the frame's edges
     float frame_bottom;

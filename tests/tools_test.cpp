@@ -49,7 +49,7 @@ bool skipped(const ToolEntry& entry) {
 TEST(Tools, AllAreRegistered) {
     for (const char* id : {"exposure", "contrast", "s-curve", "hue-saturation", "black-white",
                            "channel-mixer", "shadows-highlights", "highlight-shoulder", "three-way", "lut",
-                           "lens-vignette", "grain"}) {
+                           "lens-vignette", "grain", "diffusion", "halation"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }
@@ -371,6 +371,8 @@ std::vector<float> run_frame(const ToolEntry& entry, int width, int height, int 
     args.channels = 3;
     args.src_row_floats = width * 3;
     args.dst_row_floats = width * 3;
+    args.src_width = width;
+    args.src_height = height;
     args.canonical_x = 1.0f;
     args.canonical_y = 1.0f;
     args.frame_right = static_cast<float>(width);

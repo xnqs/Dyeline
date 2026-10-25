@@ -13,6 +13,7 @@ add_executable(dyeline_core_tests
     chain_test.cpp
     cube_test.cpp
     look_test.cpp
+    render_test.cpp
     tools_test.cpp
 )
 target_link_libraries(dyeline_core_tests PRIVATE Dyeline::core GTest::gtest_main)

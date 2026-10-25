@@ -12,6 +12,7 @@
 #include "dyeline/chain.h"
 #include "dyeline/kernels/chain_kernel.h"
 #include "dyeline/look.h"
+#include "dyeline/render.h"
 #include "temp_file.h"
 
 namespace dyeline::test {
@@ -31,34 +32,31 @@ inline std::vector<float> make_frame(int width, int height) {
     return frame;
 }
 
-// Args for a window that skips the frame's first column and row, so the tests also check
-// the window offsets and the window's place in the frame.
-inline dl_image_args window_args(int width, int height) {
-    dl_image_args args{};
-    args.width = width - 1;
-    args.height = height - 1;
-    args.channels = 4;
-    args.premultiplied = 1;
-    args.src_row_floats = width * 4;
-    args.dst_row_floats = width * 4;
-    args.src_x0 = 1;
-    args.src_y0 = 1;
-    args.dst_x0 = 1;
-    args.dst_y0 = 1;
+// A render of the frame minus its first column and row, so the tests also check the window's
+// offsets in the buffers and its place in the frame, and spatial tools reach past the
+// source's edges.
+inline RenderGeometry window_geometry(int width, int height) {
+    RenderGeometry g;
+    g.window = {1, 1, width, height};
+    g.src_bounds = {0, 0, width, height};
+    g.dst_bounds = {0, 0, width, height};
+    g.src_row_floats = width * 4;
+    g.dst_row_floats = width * 4;
+    g.channels = 4;
+    g.premultiplied = true;
     // The frame is the whole test image at half render scale with 2:1 pixels, so canonical
-    // positions differ from pixel ones.
-    args.frame_x0 = 1;
-    args.frame_y0 = 1;
-    args.canonical_x = 4.0f;
-    args.canonical_y = 2.0f;
-    args.frame_right = 4.0f * static_cast<float>(width);
-    args.frame_top = 2.0f * static_cast<float>(height);
-    args.seed = 7;
-    return args;
+    // positions differ from pixel ones, and blurs reach different distances in x and y.
+    g.canonical_x = 4.0f;
+    g.canonical_y = 2.0f;
+    g.frame_right = 4.0f * static_cast<float>(width);
+    g.frame_top = 2.0f * static_cast<float>(height);
+    g.seed = 7;
+    return g;
 }
 
-// A look using every per-pixel tool at partial strengths, under a partial overall strength,
-// so each tool's math, op order and both blends run on the GPU.
+// A look using every tool at partial strengths, under a partial overall strength, so each
+// tool's math, op order and both blends run on the GPU. Two spatial tools, with per-pixel
+// tools between them, check that each blur sees the chain up to its own tool.
 inline CompiledChain test_chain() {
     // A curved 3D LUT under LUT Gamma 2, with the frame's values reaching past its domain.
     const TempFile lut(cube_3d(9, [](double r, double g, double b, double out[3]) {
@@ -76,6 +74,7 @@ inline CompiledChain test_chain() {
         look.chain.push_back(std::move(entry));
     };
     add("exposure", 1.0, {{"stops", 1.3}});
+    add("halation", 0.8, {{"amount", 1.2}, {"threshold", 0.6}, {"size", 3.0}});
     add("contrast", 0.9, {{"contrast", 1.4}, {"pivot", 0.2}});
     add("s-curve", 1.0, {{"amount", 0.6}, {"range", 4.0}});
     add("hue-saturation", 0.7, {{"hue", 25.0}, {"saturation", 1.6}});
@@ -87,6 +86,7 @@ inline CompiledChain test_chain() {
                            {"midtones-hue", 30.0}, {"midtones-amount", 0.3},
                            {"highlights-hue", 60.0}, {"highlights-amount", 0.5}});
     add("lut", 0.9, {{"file", lut.path()}, {"gamma", 2.0}});
+    add("diffusion", 0.9, {{"amount", 0.7}, {"size", 5.0}, {"highlights", 0.4}});
     add("lens-vignette", 0.9, {{"amount", -1.5}, {"size", 0.2}, {"softness", 0.7},
                                {"roundness", 0.4}, {"center-x", 0.1}, {"center-y", -0.2}});
     add("grain", 1.0, {{"amount", 0.8}, {"size", 3.0}, {"color", 0.6}, {"seed", 12}});
@@ -110,15 +110,11 @@ inline CompiledChain table_free_chain() {
     return chain;
 }
 
-// The CPU result for the same args: the reference every GPU backend must match.
-inline std::vector<float> cpu_reference(const std::vector<float>& src, const dl_image_args& args,
+// The CPU result for the same plan: the reference every GPU backend must match.
+inline std::vector<float> cpu_reference(const std::vector<float>& src, const RenderPlan& plan,
                                         const CompiledChain& chain) {
     std::vector<float> dst(src.size(), 0.0f);
-    for (int y = 0; y < args.height; ++y) {
-        for (int x = 0; x < args.width; ++x) {
-            dl_chain_at(src.data(), dst.data(), x, y, args, &chain.pass, chain.table.data());
-        }
-    }
+    run_plan_cpu(src.data(), dst.data(), chain.table.data(), plan);
     return dst;
 }
 

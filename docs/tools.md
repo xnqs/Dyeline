@@ -157,3 +157,29 @@ and it changes every frame unless Animate is off.
 | `color` | 0.3 | 0 to 1 | 0 is the same grain in every channel; 1 is separate grain per channel. |
 | `animate` | 1 | 0 or 1 | 1 changes the grain every frame; 0 keeps it still. |
 | `seed` | 0 | 0 to 9999 | Picks a different grain pattern. |
+
+## Diffusion Filter (`diffusion`)
+
+Softens the image the way a diffusion filter in front of the lens does: a blurred copy is mixed
+back in, so edges and fine detail bloom while flat areas stay as they are. Highlights spread
+more than shadows. Size is a fraction of the frame's width, so the look is the same at any
+resolution and render scale.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 0.5 | 0 to 1 | How much of the blurred copy is mixed in. |
+| `size` | 1 | 0.05 to 10 | Blur size, in percent of the frame's width. |
+| `highlights` | 0.5 | 0 to 1 | At 0 every tone spreads alike; at 1 mostly highlights spread. |
+
+## Halation (`halation`)
+
+The warm glow film shows around bright highlights, from light that scatters back through the
+emulsion. Only light above Threshold glows, so the rest of the image is left alone. The glow is
+added, tinted, on top of the image. Size is a fraction of the frame's width.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 0.5 | 0 to 2 | Strength of the glow. |
+| `threshold` | 1 | 0.05 to 16 | Scene-linear level above which light glows (0.18 is mid grey). |
+| `size` | 0.6 | 0.05 to 5 | Glow size, in percent of the frame's width. |
+| `tint-red`, `tint-green`, `tint-blue` | 1, 0.25, 0.05 | 0 to 1 | Color of the glow. |

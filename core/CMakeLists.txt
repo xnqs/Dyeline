@@ -4,6 +4,7 @@ add_library(dyeline_core STATIC
     src/designer_link.cpp
     src/look.cpp
     src/paths.cpp
+    src/render.cpp
     src/tools.cpp
 )
 add_library(Dyeline::core ALIAS dyeline_core)
