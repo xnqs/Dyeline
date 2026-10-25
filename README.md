@@ -50,6 +50,12 @@ Dyeline targets OFX hosts on Windows, macOS and Linux. First targets:
 - Natron
 - EffectCraft (OpenFX fork)
 
+## Installing
+
+Each release on GitHub has an installer for Windows (`-setup.exe`), a package for macOS
+(`.pkg`) and an archive with `install.sh` for Linux, each also as a plain .zip of the bundle.
+[packaging/INSTALL.md](packaging/INSTALL.md) has the steps, and where your own looks are kept.
+
 ## Building
 
 Requirements: CMake 3.24+, a C++17 compiler, and git (the OpenFX SDK and GoogleTest are fetched at
@@ -81,6 +87,10 @@ plugin folder, or run `cmake --install build` to copy it to the standard locatio
 | Windows | `C:\Program Files\Common Files\OFX\Plugins` |
 | macOS | `/Library/OFX/Plugins` |
 | Linux | `/usr/OFX/Plugins` |
+
+`python3 packaging/package.py --build build` makes the same packages a release has, for the OS
+it runs on, in `dist/`. Pushing a tag such as `v0.2.0` builds them on all three in CI and opens a
+draft GitHub release with them.
 
 ## The Look Designer
 

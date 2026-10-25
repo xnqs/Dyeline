@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
 
 permissions:
@@ -76,3 +77,35 @@ jobs:
           name: ${{ matrix.artifact }}
           path: build/Dyeline.ofx.bundle
           if-no-files-found: error
+
+      # The installers and archives (see packaging/package.py), made on every run so a
+      # packaging break shows up in the PR that causes it.
+      - name: Package
+        run: ${{ runner.os == 'Windows' && 'python' || 'python3' }} packaging/package.py --build build --out dist --require-installer
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-packages
+          path: dist/*
+          if-no-files-found: error
+
+  # A tag such as v0.2.0 publishes the packages as a draft GitHub release, to check and
+  # publish by hand.
+  release:
+    name: Draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-packages'
+          path: dist
+          merge-multiple: true
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --draft --title "Dyeline $GITHUB_REF_NAME" --generate-notes
