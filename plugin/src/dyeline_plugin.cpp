@@ -1,14 +1,18 @@
 // Dyeline OFX plugin entry point.
 //
 // Milestone 0: one effect with a single Exposure tool, rendered on the CPU or on the GPU the
-// host hands over (CUDA, Metal or OpenCL). The tool chain and the Look Designer arrive in later
-// milestones; this file stays a thin bridge between OFX and the render core in core/.
+// host hands over (CUDA, Metal or OpenCL), plus a spike of the Look Designer round trip. The
+// tool chain and the real designer arrive in later milestones; this file stays a thin bridge
+// between OFX and the render core in core/.
 
+#include <cstdio>
 #include <memory>
 #include <string>
 
+#include "dyeline/designer_link.h"
 #include "dyeline/exposure.h"
 #include "dyeline/gpu.h"
+#include "module_path.h"
 #include "ofxsImageEffect.h"
 #include "ofxsMultiThread.h"
 #include "ofxsProcessing.h"
@@ -22,6 +26,14 @@ constexpr unsigned int kPluginVersionMinor = 1;
 
 constexpr const char* kParamExposure = "exposure";
 constexpr const char* kParamStrength = "strength";
+
+// Look Designer round trip. Some hosts (EffectCraft among them) hide push buttons, so a
+// checkbox opens the designer too. The look is stored in a hidden string so it saves with
+// the host project.
+constexpr const char* kParamEditLook = "editLook";
+constexpr const char* kParamOpenDesigner = "openDesigner";
+constexpr const char* kParamLook = "look";
+constexpr const char* kParamDesignerStatus = "designerStatus";
 
 class ExposureProcessor : public OFX::ImageProcessor {
 public:
@@ -70,7 +82,20 @@ public:
           dst_clip_(fetchClip(kOfxImageEffectOutputClipName)),
           src_clip_(fetchClip(kOfxImageEffectSimpleSourceClipName)),
           exposure_(fetchDoubleParam(kParamExposure)),
-          strength_(fetchDoubleParam(kParamStrength)) {}
+          strength_(fetchDoubleParam(kParamStrength)),
+          open_designer_(fetchBooleanParam(kParamOpenDesigner)),
+          look_(fetchStringParam(kParamLook)),
+          designer_status_(fetchStringParam(kParamDesignerStatus)) {}
+
+    void changedParam(const OFX::InstanceChangedArgs& args, const std::string& name) override {
+        if (name == kParamEditLook) {
+            edit_look(args.time);
+        } else if (name == kParamOpenDesigner && open_designer_->getValue()) {
+            // Untick first, so the box works like a button the next time too.
+            open_designer_->setValue(false);
+            edit_look(args.time);
+        }
+    }
 
     void render(const OFX::RenderArguments& args) override {
         std::unique_ptr<OFX::Image> dst(dst_clip_->fetchImage(args.time));
@@ -111,6 +136,40 @@ public:
     }
 
 private:
+    // Hands the current look to the designer app and blocks until the user applies or
+    // cancels, the way Looks' own editor behaves. Setting parameters is allowed here because
+    // this runs inside the host's instance-changed action.
+    void edit_look(double time) {
+        const dyeline::designer::RoundTrip trip =
+            dyeline::designer::run(dyeline::plugin::designer_path(),
+                                   dyeline::designer::format_look(params_at(time)));
+        char status[256];
+        switch (trip.outcome) {
+            case dyeline::designer::Outcome::Applied: {
+                dyeline::ExposureParams edited;
+                if (!dyeline::designer::parse_look(trip.look, edited)) {
+                    std::snprintf(status, sizeof(status), "Designer returned an unreadable look");
+                    break;
+                }
+                beginEditBlock("Edit Look");
+                exposure_->setValue(edited.stops);
+                strength_->setValue(edited.strength);
+                look_->setValue(trip.look);
+                endEditBlock();
+                std::snprintf(status, sizeof(status), "Look applied after %.1f s", trip.seconds);
+                break;
+            }
+            case dyeline::designer::Outcome::Cancelled:
+                std::snprintf(status, sizeof(status), "Designer closed without changes after %.1f s",
+                              trip.seconds);
+                break;
+            case dyeline::designer::Outcome::Failed:
+                std::snprintf(status, sizeof(status), "Designer failed: %s", trip.error.c_str());
+                break;
+        }
+        designer_status_->setValue(status);
+    }
+
     // On a GPU render the images' pixel data are device buffers on the host's GPU: CUDA
     // device pointers, MTLBuffers for Metal, or cl_mem buffers for OpenCL.
     void render_gpu(const OFX::RenderArguments& args, const OFX::Image& src, OFX::Image& dst,
@@ -160,6 +219,9 @@ private:
     OFX::Clip* src_clip_;
     OFX::DoubleParam* exposure_;
     OFX::DoubleParam* strength_;
+    OFX::BooleanParam* open_designer_;
+    OFX::StringParam* look_;
+    OFX::StringParam* designer_status_;
 };
 
 }  // namespace
@@ -239,6 +301,36 @@ void DyelineFactory::describeInContext(OFX::ImageEffectDescriptor& desc,
     strength->setDigits(2);
     strength->setAnimates(true);
     page->addChild(*strength);
+
+    OFX::PushButtonParamDescriptor* edit_look = desc.definePushButtonParam(kParamEditLook);
+    edit_look->setLabels("Edit Look...", "Edit Look...", "Edit Look...");
+    edit_look->setHint("Opens the Look Designer. The host waits until you apply or close it.");
+    page->addChild(*edit_look);
+
+    OFX::BooleanParamDescriptor* open_designer = desc.defineBooleanParam(kParamOpenDesigner);
+    open_designer->setLabels("Open Designer", "Open Designer", "Open Designer");
+    open_designer->setHint("Same as Edit Look, for hosts that hide buttons: tick to open the "
+                           "Look Designer. It unticks itself.");
+    open_designer->setDefault(false);
+    open_designer->setAnimates(false);
+    open_designer->setEvaluateOnChange(false);
+    open_designer->setIsPersistant(false);
+    page->addChild(*open_designer);
+
+    OFX::StringParamDescriptor* status = desc.defineStringParam(kParamDesignerStatus);
+    status->setLabels("Designer", "Designer", "Designer");
+    status->setStringType(OFX::eStringTypeLabel);
+    status->setDefault("Not opened yet");
+    status->setAnimates(false);
+    status->setEvaluateOnChange(false);
+    status->setIsPersistant(false);
+    page->addChild(*status);
+
+    OFX::StringParamDescriptor* look = desc.defineStringParam(kParamLook);
+    look->setLabels("Look", "Look", "Look");
+    look->setIsSecret(true);
+    look->setAnimates(false);
+    look->setEvaluateOnChange(false);
 }
 
 OFX::ImageEffect* DyelineFactory::createInstance(OfxImageEffectHandle handle,

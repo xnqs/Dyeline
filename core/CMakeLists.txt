@@ -1,4 +1,5 @@
 add_library(dyeline_core STATIC
+    src/designer_link.cpp
     src/exposure.cpp
 )
 add_library(Dyeline::core ALIAS dyeline_core)

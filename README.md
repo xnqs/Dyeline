@@ -10,7 +10,8 @@ workflow of Magic Bullet Looks.
 **Status:** early scaffolding (Milestone 0). The plugin currently offers one tool, Exposure, rendered
 on the CPU, or on the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS)
 when the host provides one.
-It is not useful for real work yet.
+It also carries a spike of the Look Designer round trip (see below). It is not useful for real
+work yet.
 
 ## Hosts
 
@@ -51,6 +52,18 @@ plugin folder, or run `cmake --install build` to copy it to the standard locatio
 | Windows | `C:\Program Files\Common Files\OFX\Plugins` |
 | macOS | `/Library/OFX/Plugins` |
 | Linux | `/usr/OFX/Plugins` |
+
+## Trying the designer round trip
+
+The bundle ships `dyeline-designer` next to the plugin binary. In Milestone 0 it is a stub with
+no window: it waits two seconds, raises Exposure by one stop and hands the look back. Click
+**Edit Look...** in the plugin's controls, or tick **Open Designer** in hosts that hide buttons.
+The host should freeze while the designer runs, then Exposure goes up by 1 and the
+**Designer** line reports how long the round trip took. Undo should restore the old values in
+one step.
+
+To check how a host copes with a long edit, start the host with `DYELINE_DESIGNER_DELAY` set
+to the number of seconds the stub should wait, for example `DYELINE_DESIGNER_DELAY=60 natron`.
 
 ## Contributing
 

@@ -28,6 +28,7 @@ git commit -s
 | `core/include/dyeline/kernels/` | Per-pixel tool math shared by every backend (CPU, CUDA, Metal, OpenCL). |
 | `core/src/gpu/` | Thin CUDA, Metal and OpenCL wrappers that launch the shared kernels. |
 | `plugin/` | The OFX plugin: parameters, clips and the bridge to the core. |
+| `designer/` | The Look Designer app (a stub for now), launched by the plugin. |
 | `tests/` | Unit tests for the core and a plugin load test. |
 | `cmake/` | Build helpers: OpenFX SDK fetch and bundle layout. |
 
