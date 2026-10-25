@@ -13,6 +13,7 @@
 #include "tools/matrix.h"
 #include "tools/s_curve.h"
 #include "tools/shadows_highlights.h"
+#include "tools/three_way.h"
 
 // At most this many tools run in one pass, and each gets this many floats of parameters.
 #define DL_MAX_OPS 16
@@ -25,6 +26,7 @@
 #define DL_OP_MATRIX 4
 #define DL_OP_SHADOWS_HIGHLIGHTS 5
 #define DL_OP_HIGHLIGHT_SHOULDER 6
+#define DL_OP_THREE_WAY 7
 
 // One tool in the pass. `strength` blends between the tool's input and output.
 struct dl_op {
@@ -75,6 +77,8 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op) {
             return dl_tool_shadows_highlights(c, op->p);
         case DL_OP_HIGHLIGHT_SHOULDER:
             return dl_tool_highlight_shoulder(c, op->p);
+        case DL_OP_THREE_WAY:
+            return dl_tool_three_way(c, op->p);
         default:
             return c;
     }

@@ -66,6 +66,9 @@ inline dl_chain test_chain() {
     add("channel-mixer", 0.6, {{"red-from-green", 0.2}, {"blue-from-blue", 0.9}});
     add("highlight-shoulder", 1.0, {{"start", 0.9}, {"headroom", 1.2}});
     add("black-white", 0.3, {{"red", 0.5}, {"green", 0.4}, {"blue", 0.1}});
+    add("three-way", 0.8, {{"shadows-hue", 210.0}, {"shadows-amount", 0.7},
+                           {"midtones-hue", 30.0}, {"midtones-amount", 0.3},
+                           {"highlights-hue", 60.0}, {"highlights-amount", 0.5}});
     add("exposure", 0.5, {{"stops", -2.0}});
     CompiledChain chain;
     std::string error;

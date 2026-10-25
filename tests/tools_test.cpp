@@ -46,7 +46,7 @@ bool skipped(const ToolEntry& entry) {
 
 TEST(Tools, AllAreRegistered) {
     for (const char* id : {"exposure", "contrast", "s-curve", "hue-saturation", "black-white",
-                           "channel-mixer", "shadows-highlights", "highlight-shoulder"}) {
+                           "channel-mixer", "shadows-highlights", "highlight-shoulder", "three-way"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }
@@ -198,6 +198,49 @@ TEST(HighlightShoulder, LeavesValuesBelowStartAndApproachesTheCeiling) {
     EXPECT_LT(far[1], far[0]);
     // Never past the ceiling, however bright.
     EXPECT_LE(run(shoulder, {1e6f, 1e6f, 1e6f, 1.0f})[0], 2.0f);
+}
+
+TEST(ThreeWay, TintsEachRangeWithoutChangingItsLuminance) {
+    const float deep = 0.18f / 128.0f;
+    const float bright = 0.18f * 64.0f;
+    // Blue shadows, orange highlights.
+    const ToolEntry grade = tool("three-way", {{"shadows-hue", 240.0}, {"shadows-amount", 1.0},
+                                               {"highlights-hue", 30.0}, {"highlights-amount", 1.0}});
+    const auto low = run(grade, {deep, deep, deep, 1.0f});
+    EXPECT_GT(low[2], low[0]);
+    EXPECT_GT(low[2], low[1]);
+    const auto high = run(grade, {bright, bright, bright, 1.0f});
+    EXPECT_GT(high[0], high[1]);
+    EXPECT_GT(high[1], high[2]);
+    // No midtone tint: the pivot grey is left alone.
+    const auto mid = run(grade, {0.18f, 0.18f, 0.18f, 1.0f});
+    EXPECT_NEAR(mid[0], 0.18f, 1e-6f);
+    EXPECT_NEAR(mid[2], 0.18f, 1e-6f);
+    // The tint takes away its luminance-weighted mean in stops, so a small tint barely
+    // changes luminance.
+    const auto subtle = run(tool("three-way", {{"midtones-hue", 120.0}, {"midtones-amount", 0.1}}),
+                            {0.18f, 0.18f, 0.18f, 1.0f});
+    EXPECT_NEAR(luma(subtle), 0.18f, 0.18f * 0.01f);
+    EXPECT_GT(subtle[1], subtle[0]);
+}
+
+TEST(ThreeWay, NeverReversesAndSkipsWhenUntinted) {
+    for (double hue = 0.0; hue < 360.0; hue += 30.0) {
+        const ToolEntry t = tool("three-way", {{"shadows-hue", hue}, {"shadows-amount", 1.0},
+                                               {"midtones-hue", hue + 180.0 > 360.0 ? hue - 180.0 : hue + 180.0},
+                                               {"midtones-amount", 1.0},
+                                               {"highlights-hue", hue}, {"highlights-amount", 1.0}});
+        std::vector<float> previous(3, 0.0f);
+        for (float stops = -12.0f; stops <= 12.0f; stops += 0.125f) {
+            const float v = 0.18f * std::exp2(stops);
+            const auto o = run(t, {v, v, v, 1.0f});
+            for (int k = 0; k < 3; ++k) {
+                EXPECT_GT(o[k], previous[k]) << "hue " << hue << " at " << stops << " stops";
+                previous[k] = o[k];
+            }
+        }
+    }
+    EXPECT_TRUE(skipped(tool("three-way", {{"shadows-hue", 90.0}})));
 }
 
 }  // namespace
