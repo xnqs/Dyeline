@@ -14,6 +14,7 @@ add_executable(dyeline_core_tests
     color_test.cpp
     frame_file_test.cpp
     cube_test.cpp
+    cube_export_test.cpp
     library_test.cpp
     look_test.cpp
     render_test.cpp

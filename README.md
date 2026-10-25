@@ -108,6 +108,12 @@ The bundle ships `dyeline-designer` next to the plugin binary: a window for edit
 - **Tool** (bottom right): the selected tool's Strength and parameters. Double-click a control,
   or right-click it, to put it back to its default.
 - **Top bar**: the look's name and its color settings (see [docs/color.md](docs/color.md)).
+- **Export .cube** (bottom bar): bakes the look into a 3D LUT (17, 33 or 65 points) for
+  software and cameras that can't run Dyeline. The LUT takes values in the look's input space
+  and gives values in its output space, so set the input to the footage's log space: a
+  scene-linear input clips above 1. Tools that depend on where a pixel is, or on its
+  neighbors (Lens Vignette, Grain, Diffusion Filter, Halation), can't be held by a LUT and are
+  left out; the dialog lists them and the file's comments name them.
 - Ctrl+Z and Ctrl+Shift+Z (Cmd on macOS) undo and redo.
 
 A tool this build doesn't know stays in the look, shown as missing, and is bypassed.

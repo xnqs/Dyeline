@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <string>
 
+#include "dyeline/cube.h"
 #include "dyeline/designer_link.h"
 #include "dyeline/frame_file.h"
 #include "dyeline/look.h"
@@ -92,4 +93,18 @@ TEST(DesignerApp, DrawsTheLooksBrowser) {
     ASSERT_EQ(trip.outcome, Outcome::Applied) << trip.error;
     EXPECT_EQ(trip.look, text);
     std::filesystem::remove_all(user_dir);
+}
+
+TEST(DesignerApp, ExportsTheLookAsACube) {
+    const auto path = std::filesystem::temp_directory_path() / "dyeline_designer_app_test.cube";
+    std::filesystem::remove(path);
+    const auto trip = dyeline::designer::run(DYELINE_DESIGNER_PATH, dyeline::write_look(sample_look()),
+                                             {"--test-export-cube", path.string(), "--test-frames", "2"});
+    ASSERT_EQ(trip.outcome, Outcome::Applied) << trip.error;
+    std::string error;
+    const auto lut = dyeline::load_cube(path.string(), error);
+    ASSERT_NE(lut, nullptr) << error;
+    EXPECT_EQ(lut->size, 33);
+    EXPECT_EQ(lut->title, "Sample");
+    std::filesystem::remove(path);
 }

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "dyeline/color.h"
+#include "dyeline/cube_export.h"
 #include "dyeline/library.h"
 #include "dyeline/tools.h"
 #include "imgui.h"
@@ -136,6 +137,9 @@ public:
     App& operator=(const App&) = delete;
 
     // Waits for the preview to catch up with the look, so a test's last frame shows it.
+    // For tests: exports the look as a .cube to `path`, as the Export dialog does.
+    void test_export(const std::string& path) { export_cube(path); }
+
     void settle_preview() {
         request_preview(false);
         if (preview_ != nullptr) {
@@ -167,6 +171,8 @@ private:
     void draw_close_prompt();
     void handle_shortcuts();
     void apply_picked_file();
+    void draw_export_popup();
+    void export_cube(const std::string& path);
     bool save();
 
     LookEditor& editor_;
@@ -174,6 +180,9 @@ private:
     SDL_Window* window_;
     SDL_Renderer* renderer_;
     PickedFile picked_;
+    PickedFile export_picked_;  // where to write a .cube; only `path` and `ready` are used
+    int export_size_ = kDefaultCubeExportSize;
+    bool open_export_ = false;
     // The preview: the worker renders, the textures show its latest image and scopes.
     std::unique_ptr<PreviewWorker> preview_;
     Texture image_;
@@ -878,7 +887,13 @@ void App::draw_footer() {
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
+    if (ImGui::Button("Export .cube")) {
+        open_export_ = true;
+    }
+    ImGui::SetItemTooltip("Bake the look into a 3D LUT for other software and cameras");
+    ImGui::SameLine();
     ImGui::TextDisabled("%s", status_.c_str());
+    draw_export_popup();
 
     const char* accept = options_.round_trip ? "Apply" : "Save";
     const char* reject = options_.round_trip ? "Cancel" : "Close";
@@ -939,13 +954,104 @@ void App::handle_shortcuts() {
 }
 
 void App::apply_picked_file() {
-    std::lock_guard<std::mutex> lock(picked_.mutex);
-    if (!picked_.ready) {
+    {
+        std::lock_guard<std::mutex> lock(picked_.mutex);
+        if (picked_.ready) {
+            picked_.ready = false;
+            editor_.set_text_param(picked_.entry, picked_.param, picked_.path);
+            editor_.end_gesture();
+        }
+    }
+    std::string export_path;
+    {
+        std::lock_guard<std::mutex> lock(export_picked_.mutex);
+        if (export_picked_.ready) {
+            export_picked_.ready = false;
+            export_path = export_picked_.path;
+        }
+    }
+    if (!export_path.empty()) {
+        if (std::filesystem::u8path(export_path).extension().empty()) {
+            export_path += ".cube";
+        }
+        export_cube(export_path);
+    }
+}
+
+void App::export_cube(const std::string& path) {
+    CubeExport out;
+    std::string error;
+    if (!export_cube_file(editor_.look(), export_size_, options_.base_dir, path, out, error)) {
+        status_ = "Couldn't export: " + error;
         return;
     }
-    picked_.ready = false;
-    editor_.set_text_param(picked_.entry, picked_.param, picked_.path);
-    editor_.end_gesture();
+    status_ = "Exported " + path;
+    if (!out.left_out.empty()) {
+        status_ += " (left out " + std::to_string(out.left_out.size()) +
+                   (out.left_out.size() == 1 ? " tool)" : " tools)");
+    }
+}
+
+void App::draw_export_popup() {
+    if (open_export_) {
+        ImGui::OpenPopup("Export .cube");
+        open_export_ = false;
+    }
+    if (!ImGui::BeginPopupModal("Export .cube", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        return;
+    }
+    ImGui::TextWrapped("Bakes the look, with its color settings, into a 3D LUT: it takes values "
+                       "in the input space and gives values in the output space.");
+    ImGui::SetNextItemWidth(160.0f);
+    const int sizes[] = {17, 33, 65};
+    const std::string current = std::to_string(export_size_) + " points";
+    if (ImGui::BeginCombo("Size", current.c_str())) {
+        for (const int size : sizes) {
+            const std::string label = std::to_string(size) + " points";
+            if (ImGui::Selectable(label.c_str(), size == export_size_)) {
+                export_size_ = size;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("33 suits most software; 65 is more exact and four times as large.");
+
+    // What the LUT can't hold, from a tiny bake of the same look.
+    CubeExport preview;
+    std::string error;
+    if (bake_cube(editor_.look(), kMinCubeExportSize, options_.base_dir, preview, error)) {
+        if (!preview.left_out.empty()) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Left out of the LUT:");
+            for (const std::string& line : preview.left_out) {
+                ImGui::BulletText("%s", line.c_str());
+            }
+        }
+        for (const std::string& note : preview.notes) {
+            ImGui::Spacing();
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32.0f);
+            ImGui::TextDisabled("%s", note.c_str());
+            ImGui::PopTextWrapPos();
+        }
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s", error.c_str());
+    }
+
+    ImGui::Spacing();
+    if (ImGui::Button("Choose file...")) {
+        static const SDL_DialogFileFilter filters[] = {{"Cube LUTs", "cube"}};
+        const std::string name = look_file_name(editor_.look().meta.name);
+        const std::string file = name.substr(0, name.size() - std::string(".dyeline").size()) + ".cube";
+        const std::string location =
+            options_.base_dir.empty() ? file : (std::filesystem::u8path(options_.base_dir) / file).u8string();
+        SDL_ShowSaveFileDialog(on_file_picked, &export_picked_, window_, filters, 1, location.c_str());
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }
 
 // Saves the look file, when there is one. Returns false if that failed.
@@ -1023,6 +1129,9 @@ AppResult run_app(LookEditor& editor, const AppOptions& options, std::string& er
         }
         if (options.test_frames > 0 && frames + 1 == options.test_frames) {
             app->settle_preview();
+            if (!options.test_export_cube.empty()) {
+                app->test_export(options.test_export_cube);
+            }
         }
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();

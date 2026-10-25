@@ -2,6 +2,7 @@ add_library(dyeline_core STATIC
     src/chain.cpp
     src/color.cpp
     src/cube.cpp
+    src/cube_export.cpp
     src/designer_link.cpp
     src/frame_file.cpp
     src/library.cpp

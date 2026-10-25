@@ -24,6 +24,8 @@ struct AppOptions {
     int test_frames = 0;
     // For tests: opens on the Looks tab.
     bool test_looks = false;
+    // For tests: exports the look as a .cube here before the last frame.
+    std::string test_export_cube;
     // For tests: saves the last frame drawn as a .bmp.
     std::string test_screenshot;
 };
