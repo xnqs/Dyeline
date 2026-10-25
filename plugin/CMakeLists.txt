@@ -1,5 +1,6 @@
 add_library(dyeline_ofx MODULE
     src/dyeline_plugin.cpp
+    src/module_path.cpp
 )
 target_link_libraries(dyeline_ofx PRIVATE Dyeline::core OpenFX::Support)
 dyeline_set_warnings(dyeline_ofx)
@@ -46,3 +47,8 @@ endif()
 
 install(DIRECTORY "${DYELINE_BUNDLE_DIR}" DESTINATION "${DYELINE_OFX_INSTALL_DIR}"
     USE_SOURCE_PERMISSIONS)
+
+# The designer app lives in the bundle next to the plugin binary, so it is configured here,
+# where the bundle layout is known.
+add_subdirectory(${PROJECT_SOURCE_DIR}/designer ${CMAKE_BINARY_DIR}/designer)
+add_dependencies(dyeline_ofx dyeline_designer)

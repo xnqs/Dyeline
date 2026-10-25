@@ -16,6 +16,15 @@ target_link_libraries(dyeline_core_tests PRIVATE Dyeline::core GTest::gtest_main
 dyeline_set_warnings(dyeline_core_tests)
 gtest_discover_tests(dyeline_core_tests)
 
+# The Look Designer round trip, run against the stub designer app.
+add_executable(dyeline_designer_tests designer_link_test.cpp)
+target_compile_definitions(dyeline_designer_tests PRIVATE
+    DYELINE_DESIGNER_PATH="$<TARGET_FILE:dyeline_designer>")
+target_link_libraries(dyeline_designer_tests PRIVATE Dyeline::core GTest::gtest_main)
+dyeline_set_warnings(dyeline_designer_tests)
+add_dependencies(dyeline_designer_tests dyeline_designer)
+gtest_discover_tests(dyeline_designer_tests)
+
 # GPU backends against the CPU reference. These skip themselves on machines without a GPU.
 if(DYELINE_ENABLE_CUDA)
     add_executable(dyeline_cuda_tests gpu_cuda_test.cpp)

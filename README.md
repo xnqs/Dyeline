@@ -10,7 +10,8 @@ workflow of Magic Bullet Looks.
 **Status:** early scaffolding (Milestone 0). The plugin currently offers one tool, Exposure, rendered
 on the CPU, or on the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS)
 when the host provides one.
-It is not useful for real work yet.
+It also carries a spike of the Look Designer round trip (see below). It is not useful for real
+work yet.
 
 ## Hosts
 
@@ -51,6 +52,30 @@ plugin folder, or run `cmake --install build` to copy it to the standard locatio
 | Windows | `C:\Program Files\Common Files\OFX\Plugins` |
 | macOS | `/Library/OFX/Plugins` |
 | Linux | `/usr/OFX/Plugins` |
+
+## Trying the designer round trip
+
+The bundle ships `dyeline-designer` next to the plugin binary. In Milestone 0 it is a stub with
+no window: it raises Exposure by one stop and hands the look back. There are two ways to link it
+to the plugin, depending on the host.
+
+**Edit Look (Natron, Resolve).** Click **Edit Look...** in the plugin's controls. The host
+freezes while the designer runs (two seconds), then Exposure goes up by 1 and the **Designer**
+line reports how long the round trip took. Undo restores the old values in one step. To check
+how a host copes with a long edit, start it with `DYELINE_DESIGNER_DELAY` set to the number of
+seconds the stub should wait, for example `DYELINE_DESIGNER_DELAY=60 natron`.
+
+**Look File (EffectCraft, and any host).** Some hosts never take parameter values back from a
+plugin, so Edit Look does nothing there. Instead, set **Look File** to a `.dyeline` file and
+edit that file with the designer:
+
+```sh
+dyeline-designer --file ~/looks/test.dyeline   # creates it, or adds a stop each run
+```
+
+While Look File is set, the file's look replaces the Exposure and Strength sliders, and the
+plugin re-reads the file whenever it changes. Clicking Edit Look with a look file set edits the
+file too.
 
 ## Contributing
 
