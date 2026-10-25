@@ -7,6 +7,7 @@
 #include <string>
 
 #include "dyeline/designer_link.h"
+#include "dyeline/frame_file.h"
 #include "dyeline/look.h"
 
 namespace {
@@ -53,4 +54,25 @@ TEST(DesignerApp, SavesTheLookFile) {
     EXPECT_EQ(saved.meta.name, "Sample");
     EXPECT_EQ(saved.chain.size(), 4u);
     std::filesystem::remove(path);
+}
+
+TEST(DesignerApp, PreviewsTheHostsFrame) {
+    dyeline::Frame frame;
+    frame.width = 64;
+    frame.height = 36;
+    for (int i = 0; i < frame.width * frame.height; ++i) {
+        const float v = static_cast<float>(i % frame.width) / static_cast<float>(frame.width);
+        frame.rgba.insert(frame.rgba.end(), {v, v * 0.5f, 1.0f - v, 1.0f});
+    }
+    frame.frame_right = 64.0f;
+    frame.frame_top = 36.0f;
+    const std::string frame_path = dyeline::designer::temp_path("-test.dlframe");
+    std::string error;
+    ASSERT_TRUE(dyeline::write_frame_file(frame_path, frame, error)) << error;
+    const std::string text = dyeline::write_look(sample_look());
+    const auto trip = dyeline::designer::run(DYELINE_DESIGNER_PATH, text,
+                                             {"--frame", frame_path, "--test-frames", "3"});
+    ASSERT_EQ(trip.outcome, Outcome::Applied) << trip.error;
+    EXPECT_EQ(trip.look, text);
+    std::filesystem::remove(std::filesystem::u8path(frame_path));
 }

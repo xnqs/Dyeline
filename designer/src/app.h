@@ -2,8 +2,10 @@
 
 // The Look Designer window.
 
+#include <memory>
 #include <string>
 
+#include "dyeline/frame_file.h"
 #include "look_editor.h"
 
 namespace dyeline::designer {
@@ -11,6 +13,10 @@ namespace dyeline::designer {
 struct AppOptions {
     // The look file being edited (--file), or empty. Save writes it.
     std::string file_path;
+    // The frame to preview (--frame), or null when the designer was opened without one.
+    std::shared_ptr<const Frame> frame;
+    // Where the look's relative paths, such as LUT files, are found: the look file's folder.
+    std::string base_dir;
     // True when the plugin waits for the result (--in/--out): the window offers Apply and
     // Cancel instead of Save and Close.
     bool round_trip = false;

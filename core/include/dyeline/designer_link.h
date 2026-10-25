@@ -29,6 +29,10 @@ struct RoundTrip {
 inline constexpr int kExitApplied = 0;
 inline constexpr int kExitCancelled = 1;
 
+// A path in the temp folder that no other round trip uses, even from another host process,
+// ending in `suffix`.
+std::string temp_path(const char* suffix);
+
 // Runs `designer_path --in <file> --out <file> [extra_args...]` and waits for it to exit.
 // <in> holds `look`; on Applied, <out> holds the edited look. Both files are removed after.
 RoundTrip run(const std::string& designer_path, const std::string& look,

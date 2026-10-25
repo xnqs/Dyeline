@@ -12,6 +12,7 @@ include(GoogleTest)
 add_executable(dyeline_core_tests
     chain_test.cpp
     color_test.cpp
+    frame_file_test.cpp
     cube_test.cpp
     look_test.cpp
     render_test.cpp
@@ -31,7 +32,7 @@ add_dependencies(dyeline_designer_tests dyeline_designer_stub)
 gtest_discover_tests(dyeline_designer_tests)
 
 # The Look Designer's editing model.
-add_executable(dyeline_look_editor_tests look_editor_test.cpp)
+add_executable(dyeline_look_editor_tests look_editor_test.cpp preview_test.cpp)
 target_link_libraries(dyeline_look_editor_tests PRIVATE dyeline_designer_model GTest::gtest_main)
 dyeline_set_warnings(dyeline_look_editor_tests)
 gtest_discover_tests(dyeline_look_editor_tests)
