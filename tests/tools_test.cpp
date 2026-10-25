@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "dyeline/chain.h"
+#include "dyeline/film.h"
 #include "dyeline/tools.h"
 #include "temp_file.h"
 
@@ -49,7 +50,7 @@ bool skipped(const ToolEntry& entry) {
 TEST(Tools, AllAreRegistered) {
     for (const char* id : {"exposure", "contrast", "s-curve", "hue-saturation", "black-white",
                            "channel-mixer", "shadows-highlights", "highlight-shoulder", "three-way", "lut",
-                           "lens-vignette", "grain", "diffusion", "halation"}) {
+                           "lens-vignette", "grain", "diffusion", "halation", "film-negative", "film-print"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }
@@ -459,6 +460,109 @@ TEST(Grain, IsGreyWhenColorIsZeroAndSofterWhenLarger) {
     };
     EXPECT_LT(step(run_frame(tool("grain", {{"size", 6.0}}), 64, 8)),
               step(run_frame(tool("grain", {{"size", 1.0}}), 64, 8)) * 0.5);
+}
+
+// Film Negative and Film Print, through every stock.
+
+std::vector<float> grey(float v) {
+    return {v, v, v, 1.0f};
+}
+
+TEST(Film, StockChoicesNameEveryStock) {
+    const dyeline::ToolSpec* negative = dyeline::find_tool("film-negative");
+    const dyeline::ToolSpec* print = dyeline::find_tool("film-print");
+    ASSERT_NE(negative, nullptr);
+    ASSERT_NE(print, nullptr);
+    EXPECT_EQ(negative->params[0].kind, dyeline::ParamKind::Choice);
+    EXPECT_EQ(negative->params[0].choices.size(),
+              static_cast<std::size_t>(dyeline::film::negative_stock_count()));
+    EXPECT_EQ(print->params[0].choices.size(),
+              static_cast<std::size_t>(dyeline::film::print_stock_count()));
+    EXPECT_EQ(negative->params[0].max, dyeline::film::negative_stock_count() - 1.0);
+    EXPECT_STREQ(dyeline::film::negative_stock(0).id, "kodak-5219");
+    EXPECT_STREQ(dyeline::film::print_stock(0).id, "kodak-2383");
+    // An index past the list is held at its end, as the look's value is clamped.
+    EXPECT_EQ(&dyeline::film::print_stock(99), &dyeline::film::print_stock(3));
+}
+
+TEST(FilmNegative, KeepsGreyAndRollsOffBothEnds) {
+    for (int stock = 0; stock < dyeline::film::negative_stock_count(); ++stock) {
+        const ToolEntry negative = tool("film-negative", {{"stock", stock}});
+        const auto mid = run(negative, grey(0.18f));
+        for (int k = 0; k < 3; ++k) {
+            EXPECT_NEAR(mid[k], 0.18f, 0.002f) << stock;
+        }
+        // Brighter in, brighter out, with less than a stop out per stop in at the ends.
+        float previous = 0.0f;
+        for (float stops = -10.0f; stops <= 10.0f; stops += 0.5f) {
+            const float out = luma(run(negative, grey(0.18f * std::exp2(stops))));
+            EXPECT_GE(out, previous * (1.0f - 1e-5f)) << stock << " at " << stops;  // flat ends round
+            previous = out;
+        }
+        const float black = luma(run(negative, grey(0.0f)));
+        EXPECT_GT(black, 0.18f / 1024.0f) << stock;  // the toe holds shadows above black
+        const float over = luma(run(negative, grey(0.18f * 1024.0f)));
+        EXPECT_LT(over, 0.18f * 1024.0f / 4.0f) << stock;  // and the shoulder compresses
+    }
+}
+
+TEST(FilmNegative, ExposureIsStopsOfLightIn) {
+    const auto brighter = run(tool("film-negative", {{"stock", 2}, {"exposure", 1.0}}),
+                              {0.1f, 0.05f, 0.02f, 1.0f});
+    const auto doubled = run(tool("film-negative", {{"stock", 2}}), {0.2f, 0.1f, 0.04f, 1.0f});
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_NEAR(brighter[k], doubled[k], 1e-4f);
+    }
+}
+
+TEST(FilmPrint, KeepsGreyAndEndsAtTheClearBase) {
+    for (int stock = 0; stock < dyeline::film::print_stock_count(); ++stock) {
+        const ToolEntry print = tool("film-print", {{"stock", stock}});
+        const auto mid = run(print, grey(0.18f));
+        const auto white = run(print, grey(1000.0f));
+        for (int k = 0; k < 3; ++k) {
+            EXPECT_NEAR(mid[k], 0.18f, 0.003f) << stock;
+            EXPECT_NEAR(white[k], 1.0f, 0.01f) << stock;
+        }
+        float previous = 0.0f;
+        for (float stops = -10.0f; stops <= 10.0f; stops += 0.5f) {
+            const float out = luma(run(print, grey(0.18f * std::exp2(stops))));
+            EXPECT_GE(out, previous * (1.0f - 1e-5f)) << stock << " at " << stops;  // flat ends round
+            previous = out;
+        }
+        // A print has more mid-tone contrast than the image it prints.
+        const float above = luma(run(print, grey(0.36f)));
+        EXPECT_GT(std::log2(above / 0.18f), 1.1f) << stock;
+    }
+}
+
+TEST(FilmPrint, PrinterLightsExposureAndContrast) {
+    const auto base = run(tool("film-print", {}), grey(0.18f));
+    // A red point adds red printer light, which makes the print more cyan.
+    const auto red = run(tool("film-print", {{"red", 6.0}}), grey(0.18f));
+    // The cyan dye takes a little green too, but far less than red.
+    EXPECT_LT(red[0] / base[0], 0.75f);
+    EXPECT_GT(red[1] / base[1], red[0] / base[0] + 0.1f);
+    const auto brighter = run(tool("film-print", {{"exposure", 1.0}}), grey(0.18f));
+    EXPECT_GT(luma(brighter), luma(base) * 1.5f);
+    // Contrast scales the print's stops around grey.
+    const auto soft = run(tool("film-print", {}), grey(0.05f));
+    const auto hard = run(tool("film-print", {{"contrast", 2.0}}), grey(0.05f));
+    EXPECT_NEAR(std::log2(hard[1] / 0.18f), 2.0f * std::log2(soft[1] / 0.18f), 1e-3f);
+}
+
+TEST(Film, NegativeThenPrintKeepsGreyNeutral) {
+    Look look;
+    look.chain = {tool("film-negative", {}), tool("film-print", {})};
+    dyeline::CompiledChain chain;
+    std::string error;
+    ASSERT_TRUE(dyeline::compile_chain(look, 1.0, chain, error)) << error;
+    std::vector<float> out(4);
+    const std::vector<float> in = grey(0.18f);
+    dyeline::render_chain_row(in.data(), out.data(), 1, 4, false, chain);
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_NEAR(out[k], 0.18f, 0.005f);
+    }
 }
 
 }  // namespace

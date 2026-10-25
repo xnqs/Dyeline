@@ -93,8 +93,9 @@ inline CompiledChain test_chain() {
     add("diffusion", 0.9, {{"amount", 0.7}, {"size", 5.0}, {"highlights", 0.4}});
     add("lens-vignette", 0.9, {{"amount", -1.5}, {"size", 0.2}, {"softness", 0.7},
                                {"roundness", 0.4}, {"center-x", 0.1}, {"center-y", -0.2}});
+    add("film-negative", 0.8, {{"stock", 4}, {"exposure", 0.5}});
+    add("film-print", 0.9, {{"stock", 1}, {"red", 3.0}, {"contrast", 1.2}});
     add("grain", 1.0, {{"amount", 0.8}, {"size", 3.0}, {"color", 0.6}, {"seed", 12}});
-    add("exposure", 0.5, {{"stops", -2.0}});
     CompiledChain chain;
     std::string error;
     compile_chain(look, 0.8, chain, error);

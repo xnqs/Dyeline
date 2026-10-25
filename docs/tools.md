@@ -128,6 +128,59 @@ Files with both a 1D and a 3D table, and 3D tables over 129 points, aren't suppo
 look file, a LUT changed on disk is picked up on the next render; EffectCraft needs Reload Look
 File bumped to render again.
 
+## Film Negative (`film-negative`)
+
+Exposes the image onto a color negative stock and returns its scan. Each of the stock's three
+layers sees the image through its own spectral sensitivity (a matrix fitted to the stock's
+datasheet, with the camera balanced for the light the stock is made for), and develops along
+its own characteristic curve. The scan reads the negative so a grey card stays at 0.18 and a
+stock's 0.6 mid-tone gamma keeps the image's contrast: what changes is the toe, which holds
+deep shadows above black, the shoulder, which rolls off highlights many stops over, and each
+layer's slightly different curve, which tints shadows and highlights the way the stock does.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `stock` | 0 | list | The negative (below). |
+| `exposure` | 0 | -6 to 6 | Stops of exposure on the negative. Over-exposing moves the image up the curve. |
+
+| `stock` | Negative |
+| --- | --- |
+| 0 | Kodak Vision3 500T 5219 |
+| 1 | Kodak Vision3 200T 5213 |
+| 2 | Kodak Vision3 250D 5207 |
+| 3 | Kodak Vision3 50D 5203 |
+| 4 | Fuji Eterna 500T |
+| 5 | Kodak Vision 320T 5277 |
+
+## Film Print (`film-print`)
+
+Prints the image onto a print stock and shows the print as a projector would. The input is
+read as a negative's scan, so Film Print after Film Negative is a negative printed onto the
+print stock, and Film Print alone prints an ideal negative of the image. Printer light is set so
+a grey card prints as a neutral grey at the stock's laboratory aim. Each print layer's curve
+gives the print's dye densities, and the dyes' spectra give the color on screen, so saturated
+colors shift and darken the way the print's dyes make them. Grey stays at 0.18 and the
+print's clear base, its brightest white, comes out at 1.0. A print adds contrast, most of all
+in the shadows: on Kodak 2383, two stops under grey prints about three and a half stops under.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `stock` | 0 | list | The print stock (below). |
+| `exposure` | 0 | -4 to 4 | Brightens the print, in stops of the image, by giving it less printer light. |
+| `red`, `green`, `blue` | 0 | -24 to 24 | Printer points, as in a film lab: one point is 0.025 log exposure. Raising one makes the print denser in that layer's dye, so +Red is more cyan, +Green more magenta, +Blue more yellow. |
+| `contrast` | 1 | 0.5 to 2 | Scales the print's tones in stops around grey. 1 is the print as projected. |
+
+| `stock` | Print |
+| --- | --- |
+| 0 | Kodak Vision 2383 |
+| 1 | Kodak Vision Premier 2393 |
+| 2 | Fuji Eterna-CP 3513DI |
+| 3 | Kodak 5384 |
+
+The stocks' curves and spectra are datasheet values digitized by the spectral_film_lut project;
+[core/film_data](../core/film_data/README.md) says where each comes from and how the tables are
+built. Both tools depend only on a pixel's color, so `.cube` export keeps them.
+
 ## Lens Vignette (`lens-vignette`)
 
 Darkens the frame toward its edges, the way a lens loses light away from its center, or

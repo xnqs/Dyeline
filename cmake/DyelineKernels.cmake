@@ -11,6 +11,7 @@ function(dyeline_embed_kernels out_var name symbol wrapper)
     list(SORT tool_headers)
     set(inputs
         ${kernels}/dl_kernel.h
+        ${kernels}/dl_tables.h
         ${tool_headers}
         ${kernels}/chain_kernel.h
         ${wrapper}

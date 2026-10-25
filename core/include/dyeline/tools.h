@@ -23,6 +23,7 @@ enum class ParamKind {
     Number,   // a slider
     Toggle,   // a checkbox: 0 or 1
     Integer,  // a whole-number field
+    Choice,   // a list: the index of one of `choices`
 };
 
 struct ParamSpec {
@@ -32,6 +33,9 @@ struct ParamSpec {
     double min;
     double max;
     ParamKind kind = ParamKind::Number;
+    // A Choice's options, in index order. Looks store the index, so options are only ever
+    // added to the end.
+    std::vector<const char*> choices = {};
 };
 
 // A tool's parameter values, already migrated, defaulted and clamped, in ParamSpec order.

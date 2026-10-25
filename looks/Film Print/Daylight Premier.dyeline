@@ -1,0 +1,39 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Daylight Premier",
+    "tags": [
+      "film",
+      "print",
+      "daylight",
+      "rich"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "film-negative",
+      "params": {
+        "stock": 2,
+        "exposure": 0.3
+      }
+    },
+    {
+      "tool": "film-print",
+      "params": {
+        "stock": 1,
+        "red": -2.0,
+        "blue": 1.0
+      }
+    },
+    {
+      "tool": "halation",
+      "strength": 0.7,
+      "params": {
+        "amount": 0.4,
+        "threshold": 1.2
+      }
+    }
+  ]
+}

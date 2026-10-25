@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "dyeline/cube.h"
+#include "dyeline/film.h"
 #include "dyeline/paths.h"
 
 namespace dyeline {
@@ -215,6 +216,76 @@ bool prepare_lut(PrepareContext& context, dl_op& op, std::string& problem) {
     return true;
 }
 
+// Film Negative and Film Print: a stock's tables go in the chain's table data (see film.h).
+constexpr double kLog10Of2 = 0.30102999566398120;
+// One printer point is 0.025 log exposure, as in a film lab.
+constexpr double kPrinterPoint = 0.025;
+
+bool append_table(PrepareContext& context, const float* data, std::size_t floats,
+                  std::string& problem) {
+    if (context.table.size() + floats > kMaxTableFloats) {
+        problem = "the look's tables are too large to load together";
+        return false;
+    }
+    context.table.insert(context.table.end(), data, data + floats);
+    return true;
+}
+
+bool prepare_film_negative(PrepareContext& context, dl_op& op, std::string& problem) {
+    const film::NegativeStock& stock = film::negative_stock(static_cast<int>(std::lround(context.values[0])));
+    op.tool = DL_OP_FILM_NEGATIVE;
+    op.p[0] = static_cast<float>(context.table.size());
+    op.p[1] = static_cast<float>(stock.points);
+    for (int i = 0; i < 9; ++i) {
+        op.p[2 + i] = stock.input[i];
+    }
+    op.p[11] = static_cast<float>(stock.stops_lo - context.values[1]);
+    op.p[12] = stock.stops_scale;
+    return append_table(context, stock.scan, static_cast<std::size_t>(stock.points) * 3, problem);
+}
+
+bool prepare_film_print(PrepareContext& context, dl_op& op, std::string& problem) {
+    const ParamValues& v = context.values;
+    const film::PrintStock& stock = film::print_stock(static_cast<int>(std::lround(v[0])));
+    op.tool = DL_OP_FILM_PRINT;
+    op.p[0] = static_cast<float>(context.table.size());
+    op.p[1] = static_cast<float>(stock.points);
+    op.p[2] = stock.log_e_lo;
+    op.p[3] = stock.log_e_scale;
+    // More Exposure brightens the print, so it takes printer light away. A printer point
+    // adds light to one layer, so raising Red makes the print more cyan.
+    for (int k = 0; k < 3; ++k) {
+        op.p[4 + k] = static_cast<float>(stock.aim[k] - v[1] * kLog10Of2 +
+                                         v[2 + static_cast<std::size_t>(k)] * kPrinterPoint);
+    }
+    const std::size_t cube_floats =
+        static_cast<std::size_t>(stock.cube_points) * stock.cube_points * stock.cube_points * 3;
+    op.p[7] = static_cast<float>(context.table.size() + static_cast<std::size_t>(stock.points) * 3);
+    op.p[8] = static_cast<float>(stock.cube_points);
+    for (int k = 0; k < 3; ++k) {
+        op.p[9 + k] = static_cast<float>((stock.cube_points - 1) / stock.d_max[k]);
+    }
+    op.p[12] = static_cast<float>(v[5]);
+    return append_table(context, stock.curves, static_cast<std::size_t>(stock.points) * 3, problem) &&
+           append_table(context, stock.display, cube_floats, problem);
+}
+
+std::vector<const char*> negative_stock_labels() {
+    std::vector<const char*> labels;
+    for (int i = 0; i < film::negative_stock_count(); ++i) {
+        labels.push_back(film::negative_stock(i).label);
+    }
+    return labels;
+}
+
+std::vector<const char*> print_stock_labels() {
+    std::vector<const char*> labels;
+    for (int i = 0; i < film::print_stock_count(); ++i) {
+        labels.push_back(film::print_stock(i).label);
+    }
+    return labels;
+}
+
 // Lens Vignette: Amount in stops, reached Softness past Size (distances are 1 at the corners).
 void encode_lens_vignette(const ParamValues& v, dl_op& op) {
     op.tool = DL_OP_LENS_VIGNETTE;
@@ -335,6 +406,20 @@ std::vector<ToolSpec> make_tools() {
     tools.push_back({"lut", "LUT", ToolCategory::Matte, 1,
                      {{"gamma", "LUT Gamma", 1.0, 0.2, 5.0}},
                      nullptr, encode_unused, never_identity, prepare_lut, "file"});
+    tools.push_back({"film-negative", "Film Negative", ToolCategory::Camera, 1,
+                     {{"stock", "Stock", 0.0, 0.0, film::negative_stock_count() - 1.0,
+                       ParamKind::Choice, negative_stock_labels()},
+                      {"exposure", "Exposure", 0.0, -6.0, 6.0}},
+                     nullptr, encode_unused, never_identity, prepare_film_negative});
+    tools.push_back({"film-print", "Film Print", ToolCategory::Post, 1,
+                     {{"stock", "Stock", 0.0, 0.0, film::print_stock_count() - 1.0,
+                       ParamKind::Choice, print_stock_labels()},
+                      {"exposure", "Exposure", 0.0, -4.0, 4.0},
+                      {"red", "Red Points", 0.0, -24.0, 24.0},
+                      {"green", "Green Points", 0.0, -24.0, 24.0},
+                      {"blue", "Blue Points", 0.0, -24.0, 24.0},
+                      {"contrast", "Contrast", 1.0, 0.5, 2.0}},
+                     nullptr, encode_unused, never_identity, prepare_film_print});
     tools.push_back({"lens-vignette", "Lens Vignette", ToolCategory::Lens, 1,
                      {{"amount", "Amount", -1.0, -4.0, 4.0},
                       {"size", "Size", 0.5, 0.0, 2.0},
