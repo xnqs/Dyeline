@@ -2,7 +2,7 @@
 //
 // Tool math is written once, in headers that include this file, and compiled four ways:
 // as plain C++ (the CPU path and the reference every GPU result is tested against), as CUDA,
-// as Metal Shading Language and, later, as OpenCL C. Kernel headers may use only what this
+// as Metal Shading Language and as OpenCL C. Kernel headers may use only what this
 // file defines plus basic C arithmetic: no standard library, no exceptions, no templates.
 #ifndef DYELINE_KERNELS_DL_KERNEL_H
 #define DYELINE_KERNELS_DL_KERNEL_H
@@ -21,6 +21,14 @@ typedef float4 dl_float4;
 #define DL_GLOBAL device
 typedef float4 dl_float4;
 #define dl_make_float4(x, y, z, w) float4((x), (y), (z), (w))
+
+#elif defined(__OPENCL_VERSION__)
+
+// OpenCL C 1.2: plain functions (no inline), which every OpenCL compiler accepts.
+#define DL_DEVICE
+#define DL_GLOBAL __global
+typedef float4 dl_float4;
+#define dl_make_float4(x, y, z, w) ((float4)((x), (y), (z), (w)))
 
 #else  // C++ (CPU)
 

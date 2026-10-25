@@ -8,7 +8,8 @@ workflow of Magic Bullet Looks.
 > Looks" is their trademark and is named here only to describe what Dyeline is an alternative to.
 
 **Status:** early scaffolding (Milestone 0). The plugin currently offers one tool, Exposure, rendered
-on the CPU, or on the GPU through CUDA (Windows, Linux) or Metal (macOS) when the host provides one.
+on the CPU, or on the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS)
+when the host provides one.
 It is not useful for real work yet.
 
 ## Hosts
@@ -23,12 +24,23 @@ Dyeline targets OFX hosts on Windows, macOS and Linux. First targets:
 
 Requirements: CMake 3.24+, a C++17 compiler, and git (the OpenFX SDK and GoogleTest are fetched at
 configure time). The CUDA backend is built when a CUDA toolkit (nvcc) is found; turn it off with
-`-DDYELINE_ENABLE_CUDA=OFF`. The Metal backend is always built on macOS.
+`-DDYELINE_ENABLE_CUDA=OFF`. The OpenCL backend is built on Windows and Linux and needs no SDK: the
+headers are fetched at configure time and the OpenCL library is loaded at run time, so the plugin
+still loads on machines without it (`-DDYELINE_ENABLE_OPENCL=OFF` turns it off). The Metal backend
+is always built on macOS.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
+```
+
+The OpenCL test runs on the first OpenCL device it finds and skips itself when there is none. On
+Linux with an AMD GPU, Mesa's rusticl driver runs it on the GPU itself, no host needed:
+
+```sh
+sudo apt install mesa-opencl-icd   # Debian/Ubuntu; Fedora: mesa-libOpenCL
+RUSTICL_ENABLE=radeonsi ctest --test-dir build -R OpenCL --output-on-failure
 ```
 
 The plugin bundle is written to `build/Dyeline.ofx.bundle`. Copy that folder into your host's OFX

@@ -1,7 +1,7 @@
 // Dyeline OFX plugin entry point.
 //
 // Milestone 0: one effect with a single Exposure tool, rendered on the CPU or on the GPU the
-// host hands over (CUDA or Metal). The tool chain and the Look Designer arrive in later
+// host hands over (CUDA, Metal or OpenCL). The tool chain and the Look Designer arrive in later
 // milestones; this file stays a thin bridge between OFX and the render core in core/.
 
 #include <memory>
@@ -89,7 +89,7 @@ public:
         }
 
         const dyeline::ExposureParams params = params_at(args.time);
-        if (args.isEnabledCudaRender || args.isEnabledMetalRender) {
+        if (args.isEnabledCudaRender || args.isEnabledMetalRender || args.isEnabledOpenCLRender) {
             render_gpu(args, *src, *dst, channels, params);
             return;
         }
@@ -112,7 +112,7 @@ public:
 
 private:
     // On a GPU render the images' pixel data are device buffers on the host's GPU: CUDA
-    // device pointers, or MTLBuffers for Metal.
+    // device pointers, MTLBuffers for Metal, or cl_mem buffers for OpenCL.
     void render_gpu(const OFX::RenderArguments& args, const OFX::Image& src, OFX::Image& dst,
                     int channels, const dyeline::ExposureParams& params) {
         const OfxRectI& window = args.renderWindow;
@@ -136,6 +136,9 @@ private:
             error = dyeline::cuda::exposure(args.pCudaStream,
                                             static_cast<const float*>(src.getPixelData()),
                                             static_cast<float*>(dst.getPixelData()), kernel_args);
+        } else if (args.isEnabledOpenCLRender) {
+            error = dyeline::opencl::exposure(args.pOpenCLCmdQ, src.getPixelData(),
+                                              dst.getPixelData(), kernel_args);
         } else {
             error = dyeline::metal::exposure(args.pMetalCmdQ, src.getPixelData(),
                                              dst.getPixelData(), kernel_args);
@@ -190,6 +193,9 @@ void DyelineFactory::describe(OFX::ImageEffectDescriptor& desc) {
     }
     if (dyeline::metal::available()) {
         desc.setSupportsMetalRender(true);
+    }
+    if (dyeline::opencl::available()) {
+        desc.setSupportsOpenCLBuffersRender(true);
     }
 }
 

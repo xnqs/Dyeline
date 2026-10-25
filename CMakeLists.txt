@@ -28,6 +28,13 @@ else()
     option(DYELINE_ENABLE_CUDA "Build the CUDA backend" ${cuda_default})
 endif()
 option(DYELINE_ENABLE_METAL "Build the Metal backend" ${APPLE})
+# OpenCL needs no SDK (only headers, fetched below), so it is on wherever hosts use it.
+if(APPLE)
+    set(opencl_default OFF)
+else()
+    set(opencl_default ON)
+endif()
+option(DYELINE_ENABLE_OPENCL "Build the OpenCL backend" ${opencl_default})
 
 if(DYELINE_ENABLE_CUDA)
     # One binary per major GPU generation the toolkit supports; override on the command line.
@@ -42,11 +49,26 @@ endif()
 if(DYELINE_ENABLE_METAL)
     enable_language(OBJCXX)
 endif()
-message(STATUS "Dyeline backends: CPU, CUDA=${DYELINE_ENABLE_CUDA}, Metal=${DYELINE_ENABLE_METAL}")
+message(STATUS "Dyeline backends: CPU, CUDA=${DYELINE_ENABLE_CUDA}, Metal=${DYELINE_ENABLE_METAL}, OpenCL=${DYELINE_ENABLE_OPENCL}")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(DyelineWarnings)
 include(OpenFX)
+include(DyelineKernels)
+
+if(DYELINE_ENABLE_OPENCL)
+    include(FetchContent)
+    FetchContent_Declare(opencl_headers
+        GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
+        GIT_TAG v2025.07.22
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR dyeline-no-cmake
+    )
+    FetchContent_MakeAvailable(opencl_headers)
+    add_library(OpenCL::Headers INTERFACE IMPORTED)
+    target_include_directories(OpenCL::Headers SYSTEM INTERFACE ${opencl_headers_SOURCE_DIR})
+    target_compile_definitions(OpenCL::Headers INTERFACE CL_TARGET_OPENCL_VERSION=120)
+endif()
 
 add_subdirectory(core)
 add_subdirectory(plugin)

@@ -29,6 +29,13 @@ if(DYELINE_ENABLE_METAL)
     target_compile_options(dyeline_metal_tests PRIVATE -fobjc-arc)
     gtest_discover_tests(dyeline_metal_tests DISCOVERY_MODE PRE_TEST)
 endif()
+if(DYELINE_ENABLE_OPENCL)
+    add_executable(dyeline_opencl_tests gpu_opencl_test.cpp)
+    target_include_directories(dyeline_opencl_tests PRIVATE ${PROJECT_SOURCE_DIR}/core/src/gpu/opencl)
+    target_link_libraries(dyeline_opencl_tests PRIVATE Dyeline::core OpenCL::Headers GTest::gtest_main)
+    dyeline_set_warnings(dyeline_opencl_tests)
+    gtest_discover_tests(dyeline_opencl_tests DISCOVERY_MODE PRE_TEST)
+endif()
 
 # Loads the built plugin binary the way a host does and checks its OFX entry points.
 add_executable(dyeline_plugin_load_test
