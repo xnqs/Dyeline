@@ -86,3 +86,20 @@ very bright colors also lose some saturation, as on film.
 | --- | --- | --- | --- |
 | `start` | 1 | 0.05 to 16 | Scene-linear value where the roll-off begins. |
 | `headroom` | 1.5 | 0.1 to 8 | Stops above Start that the ceiling sits at. |
+
+## 3-Way Grade (`three-way`)
+
+Tints the shadows, the midtones and the highlights separately, like the three color wheels of a
+grading panel. Each range's tint is a hue and an amount; the ranges blend into each other over
+six stops either side of the pivot, following the pixel's luminance. A tint shifts color
+without brightening or darkening, and tones never swap places.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `shadows-hue` | 220 | 0 to 360 | Shadows tint direction, in degrees: 0 red, 120 green, 240 blue. |
+| `shadows-amount` | 0 | 0 to 1 | Shadows tint strength. At 1 the strongest channel moves by about a stop. |
+| `midtones-hue` | 40 | 0 to 360 | Midtones tint direction. |
+| `midtones-amount` | 0 | 0 to 1 | Midtones tint strength. |
+| `highlights-hue` | 50 | 0 to 360 | Highlights tint direction. |
+| `highlights-amount` | 0 | 0 to 1 | Highlights tint strength. |
+| `pivot` | 0.18 | 0.001 to 10 | The center of the midtones. |

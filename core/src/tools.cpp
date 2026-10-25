@@ -133,6 +133,39 @@ bool shadows_highlights_is_identity(const ParamValues& v) {
     return v[0] == 0.0 && v[1] == 0.0;
 }
 
+// 3-Way Grade: each range's tint is a hue and an amount. The hue picks a direction around the
+// grey axis, from cos(hue - 120 degrees * channel); taking away its luminance-weighted mean
+// means a tint shifts color without brightening or darkening. At Amount 1 the strongest
+// channel moves by about kThreeWayMaxStops. With the fade width above, a tone's output keeps
+// rising with its input, as for Shadows/Highlights.
+constexpr double kThreeWayMaxStops = 1.0;
+
+void encode_three_way(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_THREE_WAY;
+    for (int range = 0; range < 3; ++range) {
+        const double hue = v[static_cast<std::size_t>(range * 2)] * kPi / 180.0;
+        const double amount = v[static_cast<std::size_t>(range * 2 + 1)];
+        double d[3];
+        double mean = 0.0;
+        for (int k = 0; k < 3; ++k) {
+            d[k] = std::cos(hue - k * 2.0 * kPi / 3.0);
+            mean += kLumaWeights[k] * d[k];
+        }
+        for (int k = 0; k < 3; ++k) {
+            op.p[range * 3 + k] = static_cast<float>((d[k] - mean) * amount * kThreeWayMaxStops);
+        }
+    }
+    op.p[9] = static_cast<float>(v[6]);
+    op.p[10] = static_cast<float>(kShadowsHighlightsWidth);
+    for (int k = 0; k < 3; ++k) {
+        op.p[11 + k] = static_cast<float>(kLumaWeights[k]);
+    }
+}
+
+bool three_way_is_identity(const ParamValues& v) {
+    return v[1] == 0.0 && v[3] == 0.0 && v[5] == 0.0;
+}
+
 // Highlight Shoulder: the roll-off starts at Start and approaches Headroom stops above it.
 void encode_highlight_shoulder(const ParamValues& v, dl_op& op) {
     op.tool = DL_OP_HIGHLIGHT_SHOULDER;
@@ -183,6 +216,15 @@ std::vector<ToolSpec> make_tools() {
                      {{"start", "Start", 1.0, 0.05, 16.0},
                       {"headroom", "Headroom", 1.5, 0.1, 8.0}},
                      nullptr, encode_highlight_shoulder, never_identity});
+    tools.push_back({"three-way", "3-Way Grade", ToolCategory::Matte, 1,
+                     {{"shadows-hue", "Shadows Hue", 220.0, 0.0, 360.0},
+                      {"shadows-amount", "Shadows Amount", 0.0, 0.0, 1.0},
+                      {"midtones-hue", "Midtones Hue", 40.0, 0.0, 360.0},
+                      {"midtones-amount", "Midtones Amount", 0.0, 0.0, 1.0},
+                      {"highlights-hue", "Highlights Hue", 50.0, 0.0, 360.0},
+                      {"highlights-amount", "Highlights Amount", 0.0, 0.0, 1.0},
+                      {"pivot", "Pivot", 0.18, 0.001, 10.0}},
+                     nullptr, encode_three_way, three_way_is_identity});
     return tools;
 }
 
