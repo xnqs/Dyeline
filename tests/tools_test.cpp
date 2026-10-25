@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -47,7 +48,8 @@ bool skipped(const ToolEntry& entry) {
 
 TEST(Tools, AllAreRegistered) {
     for (const char* id : {"exposure", "contrast", "s-curve", "hue-saturation", "black-white",
-                           "channel-mixer", "shadows-highlights", "highlight-shoulder", "three-way", "lut"}) {
+                           "channel-mixer", "shadows-highlights", "highlight-shoulder", "three-way", "lut",
+                           "lens-vignette", "grain"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }
@@ -351,6 +353,110 @@ TEST(Lut, TwoLutsShareTheTableData) {
     const std::vector<float> px = {0.3f, 0.3f, 0.3f, 1.0f};
     dyeline::render_chain_row(px.data(), out.data(), 1, 4, false, chain);
     EXPECT_NEAR(out[0], 0.3f, 1e-6f);  // doubled, then halved
+}
+
+// Renders one tool over a whole frame of mid grey, `width` x `height` pixels, one canonical
+// pixel each, and returns the red channel.
+std::vector<float> run_frame(const ToolEntry& entry, int width, int height, int seed = 0,
+                             float grey = 0.18f) {
+    Look look;
+    look.chain = {entry};
+    dyeline::CompiledChain chain;
+    std::string error;
+    EXPECT_TRUE(dyeline::compile_chain(look, 1.0, chain, error)) << error;
+    std::vector<float> frame(static_cast<std::size_t>(width) * height * 3, grey);
+    dl_image_args args{};
+    args.width = width;
+    args.height = height;
+    args.channels = 3;
+    args.src_row_floats = width * 3;
+    args.dst_row_floats = width * 3;
+    args.canonical_x = 1.0f;
+    args.canonical_y = 1.0f;
+    args.frame_right = static_cast<float>(width);
+    args.frame_top = static_cast<float>(height);
+    args.seed = seed;
+    dyeline::render_chain_window(frame.data(), frame.data(), args, chain);
+    std::vector<float> red;
+    for (std::size_t i = 0; i < frame.size(); i += 3) {
+        red.push_back(frame[i]);
+    }
+    return red;
+}
+
+TEST(LensVignette, DarkensTowardTheCornersOnly) {
+    const auto out = run_frame(tool("lens-vignette", {{"amount", -2.0}, {"size", 0.4},
+                                                       {"softness", 0.6}}),
+                               40, 20);
+    const auto at = [&](int x, int y) { return out[static_cast<std::size_t>(y) * 40 + x]; };
+    EXPECT_NEAR(at(20, 10), 0.18f, 1e-6f);        // the clear center
+    EXPECT_NEAR(at(0, 0), 0.18f / 4.0f, 0.002f);  // a corner, close to the full -2 stops
+    EXPECT_LT(at(0, 10), at(10, 10));             // falling off toward the edge
+    EXPECT_NEAR(at(5, 3), at(34, 16), 1e-6f);     // symmetric about the center
+    EXPECT_TRUE(skipped(tool("lens-vignette", {{"amount", 0.0}})));
+}
+
+TEST(LensVignette, RoundnessAndCenterShapeTheFalloff) {
+    // A 2:1 frame: with Roundness 1 the falloff is a circle, so a point at the top edge is
+    // closer than one equally far out in x; with Roundness 0 it follows the frame.
+    const auto round = run_frame(tool("lens-vignette", {{"amount", -2.0}, {"size", 0.2},
+                                                         {"softness", 1.0}}),
+                                 40, 20);
+    const auto ellipse = run_frame(tool("lens-vignette", {{"amount", -2.0}, {"size", 0.2},
+                                                           {"softness", 1.0}, {"roundness", 0.0}}),
+                                   40, 20);
+    // Top middle and left middle edges.
+    EXPECT_GT(round[19 * 40 + 20], round[10 * 40 + 0]);
+    EXPECT_NEAR(ellipse[19 * 40 + 20], ellipse[10 * 40 + 0], 0.004f);
+    // Moving the center right brightens the right side.
+    const auto moved = run_frame(tool("lens-vignette", {{"amount", -2.0}, {"size", 0.2},
+                                                         {"center-x", 0.5}}),
+                                 40, 20);
+    EXPECT_GT(moved[10 * 40 + 35], round[10 * 40 + 35]);
+}
+
+TEST(Grain, AddsZeroMeanNoiseThatFollowsTheSeed) {
+    const ToolEntry grain = tool("grain", {{"amount", 0.5}, {"size", 1.0}});
+    const auto a = run_frame(grain, 64, 64, 1);
+    double log_sum = 0.0;
+    float lo = 1.0f, hi = 0.0f;
+    for (float v : a) {
+        log_sum += std::log2(v / 0.18f);
+        lo = std::min(lo, v);
+        hi = std::max(hi, v);
+    }
+    EXPECT_NEAR(log_sum / static_cast<double>(a.size()), 0.0, 0.02);  // no overall shift
+    EXPECT_LT(lo, 0.18f * 0.95f);
+    EXPECT_GT(hi, 0.18f * 1.05f);
+    EXPECT_GE(lo, 0.18f * std::exp2(-0.5f));  // noise stays within 2 x Amount x half a stop
+    EXPECT_LE(hi, 0.18f * std::exp2(0.5f));
+    // Repeatable for a frame, different on the next, and fixed when not animated.
+    EXPECT_EQ(run_frame(grain, 64, 64, 1), a);
+    EXPECT_NE(run_frame(grain, 64, 64, 2), a);
+    const ToolEntry still = tool("grain", {{"amount", 0.5}, {"animate", 0.0}});
+    EXPECT_EQ(run_frame(still, 16, 16, 1), run_frame(still, 16, 16, 2));
+    EXPECT_NE(run_frame(tool("grain", {{"amount", 0.5}, {"seed", 3}}), 16, 16, 1),
+              run_frame(tool("grain", {{"amount", 0.5}, {"seed", 4}}), 16, 16, 1));
+    EXPECT_TRUE(skipped(tool("grain", {{"amount", 0.0}})));
+}
+
+TEST(Grain, IsGreyWhenColorIsZeroAndSofterWhenLarger) {
+    const ToolEntry mono = tool("grain", {{"amount", 1.0}, {"color", 0.0}});
+    const auto px = run(mono, {0.3f, 0.2f, 0.1f, 1.0f});
+    EXPECT_NEAR(px[0] / px[1], 1.5f, 1e-5f);  // every channel moved by the same factor
+    EXPECT_NEAR(px[1] / px[2], 2.0f, 1e-5f);
+    // Larger grain changes less from one pixel to the next.
+    const auto step = [](const std::vector<float>& v) {  // along rows of 64
+        double sum = 0.0;
+        for (std::size_t i = 1; i < v.size(); ++i) {
+            if (i % 64 != 0) {
+                sum += std::fabs(std::log2(v[i] / v[i - 1]));
+            }
+        }
+        return sum;
+    };
+    EXPECT_LT(step(run_frame(tool("grain", {{"size", 6.0}}), 64, 8)),
+              step(run_frame(tool("grain", {{"size", 1.0}}), 64, 8)) * 0.5);
 }
 
 }  // namespace

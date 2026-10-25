@@ -71,6 +71,15 @@ bool compile_chain(const Look& look, double strength, CompiledChain& out, std::s
     return true;
 }
 
+void render_chain_window(const float* src, float* dst, const dl_image_args& args,
+                         const CompiledChain& chain) {
+    for (int y = 0; y < args.height; ++y) {
+        for (int x = 0; x < args.width; ++x) {
+            dl_chain_at(src, dst, x, y, args, &chain.pass, chain.table.data());
+        }
+    }
+}
+
 void render_chain_row(const float* src, float* dst, std::size_t pixel_count, int channels,
                       bool premultiplied, const CompiledChain& chain) {
     dl_image_args args{};
@@ -78,9 +87,11 @@ void render_chain_row(const float* src, float* dst, std::size_t pixel_count, int
     args.height = 1;
     args.channels = channels;
     args.premultiplied = premultiplied ? 1 : 0;
-    for (int x = 0; x < args.width; ++x) {
-        dl_chain_at(src, dst, x, 0, args, &chain.pass, chain.table.data());
-    }
+    args.canonical_x = 1.0f;
+    args.canonical_y = 1.0f;
+    args.frame_right = static_cast<float>(pixel_count);
+    args.frame_top = 1.0f;
+    render_chain_window(src, dst, args, chain);
 }
 
 }  // namespace dyeline

@@ -11,7 +11,9 @@
 #include "dl_kernel.h"
 #include "tools/contrast.h"
 #include "tools/exposure.h"
+#include "tools/grain.h"
 #include "tools/highlight_shoulder.h"
+#include "tools/lens_vignette.h"
 #include "tools/lut.h"
 #include "tools/matrix.h"
 #include "tools/s_curve.h"
@@ -31,6 +33,8 @@
 #define DL_OP_HIGHLIGHT_SHOULDER 6
 #define DL_OP_THREE_WAY 7
 #define DL_OP_LUT 8
+#define DL_OP_LENS_VIGNETTE 9
+#define DL_OP_GRAIN 10
 
 // One tool in the pass. `strength` blends between the tool's input and output.
 struct dl_op {
@@ -47,8 +51,9 @@ struct dl_chain {
 };
 
 // Describes one render: a window of `width` x `height` pixels, located at (x0, y0) inside
-// the source and destination buffers. Rows are counted in floats, not bytes. The layout is
-// plain ints so it is identical in every backend.
+// the source and destination buffers. Rows are counted in floats, not bytes. The rest places
+// the window in the frame for tools that depend on position (see dl_place). Every field is a
+// 4-byte int or float, so the layout is identical in every backend.
 struct dl_image_args {
     int width;
     int height;
@@ -60,6 +65,15 @@ struct dl_image_args {
     int src_y0;
     int dst_x0;
     int dst_y0;
+    int frame_x0;          // the window's first pixel, in the host's pixel coordinates
+    int frame_y0;
+    float canonical_x;     // canonical units per pixel: pixel aspect / render scale
+    float canonical_y;     // 1 / render scale
+    float frame_left;      // the frame's edges, in canonical coordinates
+    float frame_bottom;
+    float frame_right;
+    float frame_top;
+    int seed;              // differs from frame to frame
 };
 
 DL_DEVICE dl_float4 dl_mix(dl_float4 a, dl_float4 b, float t) {
@@ -68,7 +82,7 @@ DL_DEVICE dl_float4 dl_mix(dl_float4 a, dl_float4 b, float t) {
 }
 
 DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
-                             DL_GLOBAL const float* table) {
+                             DL_GLOBAL const float* table, struct dl_place at) {
     switch (op->tool) {
         case DL_OP_EXPOSURE:
             return dl_tool_exposure(c, op->p);
@@ -86,6 +100,10 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
             return dl_tool_three_way(c, op->p);
         case DL_OP_LUT:
             return dl_tool_lut(c, op->p, table);
+        case DL_OP_LENS_VIGNETTE:
+            return dl_tool_lens_vignette(c, op->p, at);
+        case DL_OP_GRAIN:
+            return dl_tool_grain(c, op->p, at);
         default:
             return c;
     }
@@ -93,11 +111,11 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
 
 // Runs the chain on one straight-alpha color. Alpha is never changed.
 DL_DEVICE dl_float4 dl_run_chain(dl_float4 c, DL_CONSTANT const struct dl_chain* chain,
-                                DL_GLOBAL const float* table) {
+                                DL_GLOBAL const float* table, struct dl_place at) {
     const dl_float4 original = c;
     for (int i = 0; i < chain->count; ++i) {
         DL_CONSTANT const struct dl_op* op = &chain->ops[i];
-        c = dl_mix(c, dl_run_op(c, op, table), op->strength);
+        c = dl_mix(c, dl_run_op(c, op, table, at), op->strength);
     }
     return dl_mix(original, c, chain->strength);
 }
@@ -119,7 +137,15 @@ DL_DEVICE void dl_chain_at(DL_GLOBAL const float* src, DL_GLOBAL float* dst, int
     if (unpremultiply) {
         c = dl_make_float4(c.x / c.w, c.y / c.w, c.z / c.w, c.w);
     }
-    c = dl_run_chain(c, chain, table);
+    struct dl_place at;
+    at.x = ((float)(a.frame_x0 + x) + 0.5f) * a.canonical_x;
+    at.y = ((float)(a.frame_y0 + y) + 0.5f) * a.canonical_y;
+    at.frame_left = a.frame_left;
+    at.frame_bottom = a.frame_bottom;
+    at.frame_right = a.frame_right;
+    at.frame_top = a.frame_top;
+    at.seed = a.seed;
+    c = dl_run_chain(c, chain, table, at);
     if (unpremultiply) {
         c = dl_make_float4(c.x * c.w, c.y * c.w, c.z * c.w, c.w);
     }
