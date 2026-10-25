@@ -22,6 +22,8 @@ public:
 
     // True when the look differs from the one the editor was opened with, or last saved.
     bool modified() const { return modified_; }
+    // Goes up with every change to the look, including undo and redo.
+    int revision() const { return revision_; }
     void mark_saved() { modified_ = false; }
 
     // The registry entry for chain entry `i`, or null when this build can't edit it (an
@@ -69,6 +71,7 @@ private:
     std::vector<Look> redo_;
     std::string gesture_;
     bool modified_ = false;
+    int revision_ = 0;
 };
 
 }  // namespace dyeline::designer

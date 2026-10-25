@@ -188,6 +188,7 @@ bool LookEditor::undo() {
     undo_.pop_back();
     gesture_.clear();
     modified_ = true;
+    ++revision_;
     return true;
 }
 
@@ -200,11 +201,13 @@ bool LookEditor::redo() {
     redo_.pop_back();
     gesture_.clear();
     modified_ = true;
+    ++revision_;
     return true;
 }
 
 void LookEditor::checkpoint(const std::string& key) {
     modified_ = true;
+    ++revision_;
     redo_.clear();
     if (!key.empty() && key == gesture_) {
         return;

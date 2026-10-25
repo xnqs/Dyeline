@@ -20,6 +20,7 @@
 
 #include "dyeline/chain.h"
 #include "dyeline/designer_link.h"
+#include "dyeline/frame_file.h"
 #include "dyeline/gpu.h"
 #include "dyeline/look.h"
 #include "dyeline/paths.h"
@@ -47,6 +48,10 @@ constexpr const char* kParamLookFileReload = "lookFileReload";
 constexpr const char* kParamLook = "look";
 constexpr const char* kParamLookRevision = "lookRevision";
 constexpr const char* kParamDesignerStatus = "designerStatus";
+
+// The largest frame handed to the designer for its preview; bigger frames are shrunk to fit.
+constexpr int kPreviewWidth = 1920;
+constexpr int kPreviewHeight = 1080;
 
 // A parsed look, or why it couldn't be read.
 struct LoadedLook {
@@ -143,7 +148,7 @@ public:
 
     void changedParam(const OFX::InstanceChangedArgs& args, const std::string& name) override {
         if (name == kParamEditLook) {
-            edit_look(args.time);
+            edit_look(args.time, args.renderScale);
         }
     }
 
@@ -292,7 +297,7 @@ private:
     // cancels, the way Looks' own editor behaves. Setting parameters is allowed here because
     // this runs inside the host's instance-changed action. With a look file set, the designer
     // edits the file instead, and bumping the hidden revision makes the host render again.
-    void edit_look(double time) {
+    void edit_look(double time, OfxPointD render_scale) {
         std::string file;
         look_file_->getValue(file);
         std::string text;
@@ -301,9 +306,18 @@ private:
         if (!file.empty()) {
             args = {"--file", dyeline::expand_home(file)};
         }
+        const std::string frame_path = write_preview_frame(time, render_scale);
+        if (!frame_path.empty()) {
+            args.push_back("--frame");
+            args.push_back(frame_path);
+        }
         const dyeline::designer::RoundTrip trip =
             dyeline::designer::run(dyeline::plugin::designer_path(),
                                    text.empty() ? dyeline::write_look(dyeline::Look{}) : text, args);
+        if (!frame_path.empty()) {
+            std::error_code ignored;
+            std::filesystem::remove(std::filesystem::u8path(frame_path), ignored);
+        }
         char status[256];
         switch (trip.outcome) {
             case dyeline::designer::Outcome::Applied: {
@@ -335,6 +349,48 @@ private:
                 break;
         }
         designer_status_->setValue(status);
+    }
+
+    // Saves the source frame at `time`, shrunk to preview size, for the designer to show.
+    // Returns its path, or empty when there's no frame to show: an unconnected input, a host
+    // that doesn't hand out images outside a render, or pixels that aren't float.
+    std::string write_preview_frame(double time, OfxPointD render_scale) {
+        try {
+            if (!src_clip_->isConnected()) {
+                return {};
+            }
+            std::unique_ptr<OFX::Image> src(src_clip_->fetchImage(time));
+            if (!src || src->getPixelDepth() != OFX::eBitDepthFloat) {
+                return {};
+            }
+            const int channels = channel_count(src->getPixelComponents());
+            const OfxRectI bounds = src->getBounds();
+            if (channels == 0 || bounds.x2 <= bounds.x1 || bounds.y2 <= bounds.y1) {
+                return {};
+            }
+            const dyeline::RenderGeometry g =
+                frame_geometry(time, render_scale, src->getPixelAspectRatio());
+            dyeline::Frame geometry;
+            geometry.premultiplied = src->getPreMultiplication() == OFX::eImagePreMultiplied;
+            geometry.x0 = bounds.x1;
+            geometry.y0 = bounds.y1;
+            geometry.canonical_x = g.canonical_x;
+            geometry.canonical_y = g.canonical_y;
+            geometry.frame_left = g.frame_left;
+            geometry.frame_bottom = g.frame_bottom;
+            geometry.frame_right = g.frame_right;
+            geometry.frame_top = g.frame_top;
+            geometry.seed = g.seed;
+            const dyeline::Frame frame = dyeline::shrink_to_fit(
+                static_cast<const float*>(src->getPixelData()), bounds.x2 - bounds.x1,
+                bounds.y2 - bounds.y1, channels, src->getRowBytes() / static_cast<int>(sizeof(float)),
+                geometry, kPreviewWidth, kPreviewHeight);
+            const std::string path = dyeline::designer::temp_path("-frame.dlframe");
+            std::string error;
+            return dyeline::write_frame_file(path, frame, error) ? path : std::string();
+        } catch (...) {
+            return {};  // the designer opens without a preview
+        }
     }
 
     static dyeline::PixelRect to_rect(const OfxRectI& r) {

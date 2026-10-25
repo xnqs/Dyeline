@@ -26,12 +26,9 @@ extern char** environ;
 
 namespace dyeline::designer {
 
-namespace {
-
 namespace fs = std::filesystem;
 
-// A path in the temp folder no other round trip uses, even from another host process.
-fs::path unique_temp_path(const char* suffix) {
+std::string temp_path(const char* suffix) {
     static std::atomic<unsigned> counter{0};
 #ifdef _WIN32
     const unsigned long pid = GetCurrentProcessId();
@@ -41,7 +38,13 @@ fs::path unique_temp_path(const char* suffix) {
     const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
     std::ostringstream name;
     name << "dyeline-" << pid << '-' << ticks << '-' << counter++ << suffix;
-    return fs::temp_directory_path() / name.str();
+    return (fs::temp_directory_path() / name.str()).u8string();
+}
+
+namespace {
+
+fs::path unique_temp_path(const char* suffix) {
+    return fs::u8path(temp_path(suffix));
 }
 
 bool write_file(const fs::path& path, const std::string& text) {

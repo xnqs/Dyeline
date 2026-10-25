@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <memory>
 #include <cstdio>
 #include <mutex>
 #include <string>
@@ -15,6 +17,7 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
 #include "imgui_stdlib.h"
+#include "preview.h"
 
 namespace dyeline::designer {
 
@@ -58,8 +61,27 @@ void SDLCALL on_file_picked(void* userdata, const char* const* files, int /*filt
 
 class App {
 public:
-    App(LookEditor& editor, const AppOptions& options, SDL_Window* window)
-        : editor_(editor), options_(options), window_(window) {}
+    App(LookEditor& editor, const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer)
+        : editor_(editor), options_(options), window_(window), renderer_(renderer) {
+        if (options_.frame != nullptr) {
+            preview_ = std::make_unique<PreviewWorker>(options_.frame);
+        }
+    }
+    ~App() {
+        if (texture_ != nullptr) {
+            SDL_DestroyTexture(texture_);
+        }
+    }
+    App(const App&) = delete;
+    App& operator=(const App&) = delete;
+
+    // Waits for the preview to catch up with the look, so a test's last frame shows it.
+    void settle_preview() {
+        request_preview();
+        if (preview_ != nullptr) {
+            preview_->wait_idle();
+        }
+    }
 
     // Draws one frame. Returns false once the user has applied or closed.
     bool frame();
@@ -70,6 +92,8 @@ private:
     void draw_header();
     void draw_chain(float width);
     void draw_tool();
+    void draw_preview(float height);
+    void request_preview();
     void draw_footer();
     void draw_close_prompt();
     void handle_shortcuts();
@@ -79,7 +103,19 @@ private:
     LookEditor& editor_;
     const AppOptions& options_;
     SDL_Window* window_;
+    SDL_Renderer* renderer_;
     PickedFile picked_;
+    // The preview: the worker renders, the texture shows its latest image.
+    std::unique_ptr<PreviewWorker> preview_;
+    SDL_Texture* texture_ = nullptr;
+    int texture_width_ = 0;
+    int texture_height_ = 0;
+    std::vector<std::string> preview_problems_;
+    int requested_revision_ = -1;
+    bool requested_original_ = false;
+    int requested_view_ = -1;
+    bool show_original_ = false;
+    int view_ = 0;  // 0 auto, 1 as is, 2 linear to sRGB
     std::size_t selected_ = 0;
     std::string status_;
     bool open_close_prompt_ = false;
@@ -108,9 +144,17 @@ bool App::frame() {
     draw_chain(chain_width);
     ImGui::EndChild();
     ImGui::SameLine();
-    ImGui::BeginChild("tool", ImVec2(0.0f, body), ImGuiChildFlags_Borders);
+    ImGui::BeginGroup();
+    const float preview_height = body * 0.62f;
+    ImGui::BeginChild("preview", ImVec2(0.0f, preview_height), ImGuiChildFlags_Borders,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    draw_preview(preview_height);
+    ImGui::EndChild();
+    ImGui::BeginChild("tool", ImVec2(0.0f, body - preview_height - ImGui::GetStyle().ItemSpacing.y),
+                      ImGuiChildFlags_Borders);
     draw_tool();
     ImGui::EndChild();
+    ImGui::EndGroup();
 
     draw_footer();
     draw_close_prompt();
@@ -404,6 +448,90 @@ void App::draw_tool() {
     ImGui::PopID();
 }
 
+void App::request_preview() {
+    if (preview_ == nullptr) {
+        return;
+    }
+    if (editor_.revision() == requested_revision_ && show_original_ == requested_original_ &&
+        view_ == requested_view_) {
+        return;
+    }
+    requested_revision_ = editor_.revision();
+    requested_original_ = show_original_;
+    requested_view_ = view_;
+    PreviewRequest request;
+    request.look = editor_.look();
+    request.base_dir = options_.base_dir;
+    request.original = show_original_;
+    if (view_ == 1) {
+        request.view = ViewTransform::AsIs;
+    } else if (view_ == 2) {
+        request.view = ViewTransform::LinearToSrgb;
+    }
+    preview_->request(std::move(request));
+}
+
+void App::draw_preview(float height) {
+    if (preview_ == nullptr) {
+        ImGui::TextDisabled("No frame to preview. Open the designer with Edit Look in the plugin "
+                            "to see the current frame here.");
+        return;
+    }
+    request_preview();
+    DisplayImage image;
+    if (preview_->take(image, preview_problems_) && image.width > 0) {
+        if (texture_ == nullptr || texture_width_ != image.width || texture_height_ != image.height) {
+            if (texture_ != nullptr) {
+                SDL_DestroyTexture(texture_);
+            }
+            texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32,
+                                         SDL_TEXTUREACCESS_STATIC, image.width, image.height);
+            texture_width_ = image.width;
+            texture_height_ = image.height;
+            if (texture_ != nullptr) {
+                SDL_SetTextureScaleMode(texture_, SDL_SCALEMODE_LINEAR);
+            }
+        }
+        if (texture_ != nullptr) {
+            SDL_UpdateTexture(texture_, nullptr, image.rgba.data(), image.width * 4);
+        }
+    }
+
+    ImGui::Checkbox("Original", &show_original_);
+    ImGui::SetItemTooltip("Show the frame without the look (B)");
+    ImGui::SameLine(0.0f, 16.0f);
+    ImGui::SetNextItemWidth(180.0f);
+    const char* views[] = {"View: auto", "View: as is", "View: linear as sRGB"};
+    ImGui::Combo("##view", &view_, views, 3);
+    ImGui::SetItemTooltip("Auto shows linear spaces through the sRGB curve, and display or log "
+                          "spaces as they are.");
+    if (!preview_problems_.empty()) {
+        ImGui::SameLine(0.0f, 16.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Bypassed: %s",
+                           preview_problems_.front().c_str());
+    }
+
+    if (texture_ == nullptr) {
+        return;
+    }
+    // Fit the frame in the pane, keeping its shape (pixel aspect included).
+    const Frame& frame = *options_.frame;
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const float aspect = (static_cast<float>(frame.width) * frame.canonical_x) /
+                         (static_cast<float>(frame.height) * frame.canonical_y);
+    float w = avail.x;
+    float h = w / aspect;
+    if (h > avail.y) {
+        h = avail.y;
+        w = h * aspect;
+    }
+    const ImVec2 cursor = ImGui::GetCursorPos();
+    ImGui::SetCursorPos(ImVec2(cursor.x + (avail.x - w) * 0.5f, cursor.y + (avail.y - h) * 0.5f));
+    ImGui::Image(ImTextureRef(static_cast<ImTextureID>(reinterpret_cast<std::intptr_t>(texture_))),
+                 ImVec2(w, h));
+    (void)height;
+}
+
 void App::draw_footer() {
     ImGui::BeginDisabled(!editor_.can_undo());
     if (ImGui::Button("Undo")) {
@@ -464,6 +592,9 @@ void App::handle_shortcuts() {
     if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z) ||
         ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y)) {
         editor_.redo();
+    }
+    if (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_B, false)) {
+        show_original_ = !show_original_;
     }
     if (!options_.round_trip && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
         save();
@@ -536,7 +667,7 @@ AppResult run_app(LookEditor& editor, const AppOptions& options, std::string& er
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
 
-    App app(editor, options, window);
+    auto app = std::make_unique<App>(editor, options, window, renderer);
     int frames = 0;
     bool running = true;
     while (running) {
@@ -546,17 +677,20 @@ AppResult run_app(LookEditor& editor, const AppOptions& options, std::string& er
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
                  event.window.windowID == SDL_GetWindowID(window))) {
-                app.request_close();
+                app->request_close();
             }
         }
         if ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0 && options.test_frames == 0) {
             SDL_Delay(10);
             continue;
         }
+        if (options.test_frames > 0 && frames + 1 == options.test_frames) {
+            app->settle_preview();
+        }
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
-        running = app.frame();
+        running = app->frame();
         ImGui::Render();
         SDL_SetRenderScale(renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
         SDL_SetRenderDrawColorFloat(renderer, 0.1f, 0.1f, 0.11f, 1.0f);
@@ -575,7 +709,7 @@ AppResult run_app(LookEditor& editor, const AppOptions& options, std::string& er
         }
     }
 
-    AppResult result = app.result();
+    AppResult result = app->result();
     if (options.test_frames > 0 && running) {
         result = AppResult::Applied;
         if (!options.file_path.empty() && !write_look_file(options.file_path, editor.look(), error)) {
@@ -583,6 +717,7 @@ AppResult run_app(LookEditor& editor, const AppOptions& options, std::string& er
         }
     }
 
+    app.reset();  // its texture goes before the renderer
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();

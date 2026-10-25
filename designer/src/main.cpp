@@ -2,33 +2,39 @@
 //
 // Usage:
 //   dyeline-designer --in <look.json> --out <look.json> [--file <look.dyeline>]
+//                    [--frame <frame.dlframe>]
 //   dyeline-designer --file <look.dyeline>
 //
 // --in/--out is the round trip with the plugin: the window offers Apply, which writes the
 // edited look to <out> and exits with kExitApplied, and Cancel, which exits with
 // kExitCancelled. --file edits a look file instead (created with a neutral look if it doesn't
 // exist), which is how hosts like EffectCraft get the look; with --out too, Apply also saves
-// the file. --test-frames <n> draws n frames and then applies, and --test-screenshot <file.bmp>
+// the file. --frame names the host's current frame (see frame_file.h), shown in the preview.
+// --test-frames <n> draws n frames and then applies, and --test-screenshot <file.bmp>
 // saves the last one, for tests.
 
 #include <SDL3/SDL_main.h>
 
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <string>
 #include <utility>
 
 #include "app.h"
 #include "dyeline/designer_link.h"
+#include "dyeline/frame_file.h"
 #include "dyeline/look.h"
 #include "look_editor.h"
 
 int main(int argc, char* argv[]) {
     std::string in_path;
     std::string out_path;
+    std::string frame_path;
     dyeline::designer::AppOptions options;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--in") == 0 && i + 1 < argc) {
@@ -37,6 +43,8 @@ int main(int argc, char* argv[]) {
             out_path = argv[++i];
         } else if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
             options.file_path = argv[++i];
+        } else if (std::strcmp(argv[i], "--frame") == 0 && i + 1 < argc) {
+            frame_path = argv[++i];
         } else if (std::strcmp(argv[i], "--test-frames") == 0 && i + 1 < argc) {
             options.test_frames = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--test-screenshot") == 0 && i + 1 < argc) {
@@ -48,6 +56,19 @@ int main(int argc, char* argv[]) {
         return 2;
     }
     options.round_trip = !out_path.empty();
+    if (!options.file_path.empty()) {
+        options.base_dir = std::filesystem::u8path(options.file_path).parent_path().u8string();
+    }
+    if (!frame_path.empty()) {
+        // Without a readable frame the designer still opens, just without a preview.
+        auto frame = std::make_shared<dyeline::Frame>();
+        std::string frame_error;
+        if (dyeline::read_frame_file(frame_path, *frame, frame_error)) {
+            options.frame = std::move(frame);
+        } else {
+            std::cerr << "dyeline-designer: no preview: " << frame_error << "\n";
+        }
+    }
 
     // The look to start from: the look file when it exists, else what the plugin handed over,
     // else an empty look.
