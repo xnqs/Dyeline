@@ -9,8 +9,10 @@
 #include "dl_kernel.h"
 #include "tools/contrast.h"
 #include "tools/exposure.h"
-#include "tools/hue_saturation.h"
+#include "tools/highlight_shoulder.h"
+#include "tools/matrix.h"
 #include "tools/s_curve.h"
+#include "tools/shadows_highlights.h"
 
 // At most this many tools run in one pass, and each gets this many floats of parameters.
 #define DL_MAX_OPS 16
@@ -20,7 +22,9 @@
 #define DL_OP_EXPOSURE 1
 #define DL_OP_CONTRAST 2
 #define DL_OP_S_CURVE 3
-#define DL_OP_HUE_SATURATION 4
+#define DL_OP_MATRIX 4
+#define DL_OP_SHADOWS_HIGHLIGHTS 5
+#define DL_OP_HIGHLIGHT_SHOULDER 6
 
 // One tool in the pass. `strength` blends between the tool's input and output.
 struct dl_op {
@@ -65,8 +69,12 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op) {
             return dl_tool_contrast(c, op->p);
         case DL_OP_S_CURVE:
             return dl_tool_s_curve(c, op->p);
-        case DL_OP_HUE_SATURATION:
-            return dl_tool_hue_saturation(c, op->p);
+        case DL_OP_MATRIX:
+            return dl_tool_matrix(c, op->p);
+        case DL_OP_SHADOWS_HIGHLIGHTS:
+            return dl_tool_shadows_highlights(c, op->p);
+        case DL_OP_HIGHLIGHT_SHOULDER:
+            return dl_tool_highlight_shoulder(c, op->p);
         default:
             return c;
     }
