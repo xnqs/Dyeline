@@ -18,6 +18,7 @@
 #include "imgui_impl_sdlrenderer3.h"
 #include "imgui_stdlib.h"
 #include "preview.h"
+#include "scopes.h"
 
 namespace dyeline::designer {
 
@@ -59,17 +60,71 @@ void SDLCALL on_file_picked(void* userdata, const char* const* files, int /*filt
     picked->ready = true;
 }
 
+// An image on the GPU, remade when its size changes.
+class Texture {
+public:
+    explicit Texture(SDL_Renderer* renderer) : renderer_(renderer) {}
+    ~Texture() {
+        if (texture_ != nullptr) {
+            SDL_DestroyTexture(texture_);
+        }
+    }
+    Texture(const Texture&) = delete;
+    Texture& operator=(const Texture&) = delete;
+
+    void update(const DisplayImage& image) {
+        if (image.width <= 0 || image.height <= 0) {
+            return;
+        }
+        if (texture_ == nullptr || width_ != image.width || height_ != image.height) {
+            if (texture_ != nullptr) {
+                SDL_DestroyTexture(texture_);
+            }
+            texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32,
+                                         SDL_TEXTUREACCESS_STATIC, image.width, image.height);
+            width_ = image.width;
+            height_ = image.height;
+            if (texture_ != nullptr) {
+                SDL_SetTextureScaleMode(texture_, SDL_SCALEMODE_LINEAR);
+            }
+        }
+        if (texture_ != nullptr) {
+            SDL_UpdateTexture(texture_, nullptr, image.rgba.data(), image.width * 4);
+        }
+    }
+    bool ready() const { return texture_ != nullptr; }
+    ImTextureRef ref() const {
+        return ImTextureRef(static_cast<ImTextureID>(reinterpret_cast<std::intptr_t>(texture_)));
+    }
+
+private:
+    SDL_Renderer* renderer_;
+    SDL_Texture* texture_ = nullptr;
+    int width_ = 0;
+    int height_ = 0;
+};
+
+// Draws `texture` as large as fits in `size` at the cursor, keeping its shape, centered.
+void fit_image(const Texture& texture, float aspect, ImVec2 size) {
+    float w = size.x;
+    float h = w / aspect;
+    if (h > size.y) {
+        h = size.y;
+        w = h * aspect;
+    }
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(size);
+    const ImVec2 corner(at.x + (size.x - w) * 0.5f, at.y + (size.y - h) * 0.5f);
+    ImGui::GetWindowDrawList()->AddImage(texture.ref(), corner, ImVec2(corner.x + w, corner.y + h));
+}
+
 class App {
 public:
     App(LookEditor& editor, const AppOptions& options, SDL_Window* window, SDL_Renderer* renderer)
-        : editor_(editor), options_(options), window_(window), renderer_(renderer) {
+        : editor_(editor), options_(options), window_(window), renderer_(renderer),
+          image_(renderer), parade_(renderer), vectorscope_(renderer) {
         if (options_.frame != nullptr) {
             preview_ = std::make_unique<PreviewWorker>(options_.frame);
-        }
-    }
-    ~App() {
-        if (texture_ != nullptr) {
-            SDL_DestroyTexture(texture_);
         }
     }
     App(const App&) = delete;
@@ -77,7 +132,7 @@ public:
 
     // Waits for the preview to catch up with the look, so a test's last frame shows it.
     void settle_preview() {
-        request_preview();
+        request_preview(false);
         if (preview_ != nullptr) {
             preview_->wait_idle();
         }
@@ -93,7 +148,7 @@ private:
     void draw_chain(float width);
     void draw_tool();
     void draw_preview(float height);
-    void request_preview();
+    void request_preview(bool allow_draft);
     void draw_footer();
     void draw_close_prompt();
     void handle_shortcuts();
@@ -105,16 +160,18 @@ private:
     SDL_Window* window_;
     SDL_Renderer* renderer_;
     PickedFile picked_;
-    // The preview: the worker renders, the texture shows its latest image.
+    // The preview: the worker renders, the textures show its latest image and scopes.
     std::unique_ptr<PreviewWorker> preview_;
-    SDL_Texture* texture_ = nullptr;
-    int texture_width_ = 0;
-    int texture_height_ = 0;
+    Texture image_;
+    Texture parade_;
+    Texture vectorscope_;
     std::vector<std::string> preview_problems_;
     int requested_revision_ = -1;
     bool requested_original_ = false;
     int requested_view_ = -1;
+    bool requested_draft_ = false;
     bool show_original_ = false;
+    bool show_scopes_ = true;
     int view_ = 0;  // 0 auto, 1 as is, 2 linear to sRGB
     std::size_t selected_ = 0;
     std::string status_;
@@ -448,18 +505,23 @@ void App::draw_tool() {
     ImGui::PopID();
 }
 
-void App::request_preview() {
+void App::request_preview(bool allow_draft) {
     if (preview_ == nullptr) {
         return;
     }
+    // While a control is held (a slider being dragged), quick small renders follow it; the
+    // full-size render comes when it is let go.
+    const bool draft = allow_draft && ImGui::IsAnyItemActive();
     if (editor_.revision() == requested_revision_ && show_original_ == requested_original_ &&
-        view_ == requested_view_) {
+        view_ == requested_view_ && (draft == requested_draft_ || draft)) {
         return;
     }
     requested_revision_ = editor_.revision();
     requested_original_ = show_original_;
     requested_view_ = view_;
+    requested_draft_ = draft;
     PreviewRequest request;
+    request.draft = draft;
     request.look = editor_.look();
     request.base_dir = options_.base_dir;
     request.original = show_original_;
@@ -477,24 +539,13 @@ void App::draw_preview(float height) {
                             "to see the current frame here.");
         return;
     }
-    request_preview();
-    DisplayImage image;
-    if (preview_->take(image, preview_problems_) && image.width > 0) {
-        if (texture_ == nullptr || texture_width_ != image.width || texture_height_ != image.height) {
-            if (texture_ != nullptr) {
-                SDL_DestroyTexture(texture_);
-            }
-            texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32,
-                                         SDL_TEXTUREACCESS_STATIC, image.width, image.height);
-            texture_width_ = image.width;
-            texture_height_ = image.height;
-            if (texture_ != nullptr) {
-                SDL_SetTextureScaleMode(texture_, SDL_SCALEMODE_LINEAR);
-            }
-        }
-        if (texture_ != nullptr) {
-            SDL_UpdateTexture(texture_, nullptr, image.rgba.data(), image.width * 4);
-        }
+    request_preview(true);
+    PreviewResult result;
+    if (preview_->take(result) && result.image.width > 0) {
+        image_.update(result.image);
+        parade_.update(result.parade);
+        vectorscope_.update(result.vectorscope);
+        preview_problems_ = std::move(result.problems);
     }
 
     ImGui::Checkbox("Original", &show_original_);
@@ -505,30 +556,39 @@ void App::draw_preview(float height) {
     ImGui::Combo("##view", &view_, views, 3);
     ImGui::SetItemTooltip("Auto shows linear spaces through the sRGB curve, and display or log "
                           "spaces as they are.");
+    ImGui::SameLine(0.0f, 16.0f);
+    ImGui::Checkbox("Scopes", &show_scopes_);
+    ImGui::SetItemTooltip("Show the RGB parade and vectorscope of the preview (S)");
     if (!preview_problems_.empty()) {
         ImGui::SameLine(0.0f, 16.0f);
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Bypassed: %s",
                            preview_problems_.front().c_str());
     }
 
-    if (texture_ == nullptr) {
+    if (!image_.ready()) {
         return;
     }
-    // Fit the frame in the pane, keeping its shape (pixel aspect included).
+    // The frame fills the pane, keeping its shape (pixel aspect included); the scopes, when
+    // shown, take a column on the right, the parade over the vectorscope.
     const Frame& frame = *options_.frame;
-    const ImVec2 avail = ImGui::GetContentRegionAvail();
     const float aspect = (static_cast<float>(frame.width) * frame.canonical_x) /
                          (static_cast<float>(frame.height) * frame.canonical_y);
-    float w = avail.x;
-    float h = w / aspect;
-    if (h > avail.y) {
-        h = avail.y;
-        w = h * aspect;
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float scopes_width = show_scopes_ ? std::min(avail.x * 0.34f, avail.y * 1.1f) : 0.0f;
+    ImGui::BeginGroup();
+    fit_image(image_, aspect, ImVec2(avail.x - scopes_width - (show_scopes_ ? spacing : 0.0f), avail.y));
+    ImGui::EndGroup();
+    if (show_scopes_ && parade_.ready() && vectorscope_.ready()) {
+        ImGui::SameLine(0.0f, spacing);
+        ImGui::BeginGroup();
+        const float gap = ImGui::GetStyle().ItemSpacing.y;
+        const float parade_height = (avail.y - gap) * 0.42f;
+        fit_image(parade_, static_cast<float>(kParadeWidth) / kParadeHeight,
+                  ImVec2(scopes_width, parade_height));
+        fit_image(vectorscope_, 1.0f, ImVec2(scopes_width, avail.y - parade_height - gap));
+        ImGui::EndGroup();
     }
-    const ImVec2 cursor = ImGui::GetCursorPos();
-    ImGui::SetCursorPos(ImVec2(cursor.x + (avail.x - w) * 0.5f, cursor.y + (avail.y - h) * 0.5f));
-    ImGui::Image(ImTextureRef(static_cast<ImTextureID>(reinterpret_cast<std::intptr_t>(texture_))),
-                 ImVec2(w, h));
     (void)height;
 }
 
@@ -595,6 +655,10 @@ void App::handle_shortcuts() {
     }
     if (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_B, false)) {
         show_original_ = !show_original_;
+    }
+    if (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_S, false) &&
+        !ImGui::GetIO().KeyCtrl) {
+        show_scopes_ = !show_scopes_;
     }
     if (!options_.round_trip && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
         save();

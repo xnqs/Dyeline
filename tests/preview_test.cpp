@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "dyeline/kernels/chain_kernel.h"
 #include "dyeline/look.h"
 #include "preview.h"
+#include "scopes.h"
 
 namespace {
 
@@ -112,9 +114,87 @@ TEST(Preview, WorkerRendersTheLatestRequest) {
         worker.request(std::move(request));
     }
     worker.wait_idle();
+    dyeline::designer::PreviewResult result;
+    ASSERT_TRUE(worker.take(result));
+    EXPECT_EQ(result.image.rgba[8], srgb_byte(0.18f * 2.8284271f));
+    EXPECT_EQ(result.parade.width, dyeline::designer::kParadeWidth);
+    EXPECT_EQ(result.vectorscope.width, dyeline::designer::kVectorscopeSize);
+    EXPECT_FALSE(worker.take(result));  // nothing new since
+}
+
+TEST(Preview, DraftsRenderASmallerFrame) {
+    Frame frame;
+    frame.width = 1920;
+    frame.height = 1080;
+    frame.rgba.assign(static_cast<std::size_t>(frame.width) * frame.height * 4, 0.18f);
+    frame.frame_right = 1920.0f;
+    frame.frame_top = 1080.0f;
+    dyeline::designer::PreviewWorker worker(std::make_shared<const Frame>(frame));
+    PreviewRequest request;
+    request.look = exposure_look(1.0);
+    request.draft = true;
+    worker.request(request);
+    worker.wait_idle();
+    dyeline::designer::PreviewResult result;
+    ASSERT_TRUE(worker.take(result));
+    EXPECT_TRUE(result.draft);
+    EXPECT_EQ(result.image.width, 640);
+    EXPECT_EQ(result.image.height, 360);
+    EXPECT_EQ(result.image.rgba[0], srgb_byte(0.36f));
+
+    request.draft = false;
+    worker.request(request);
+    worker.wait_idle();
+    ASSERT_TRUE(worker.take(result));
+    EXPECT_FALSE(result.draft);
+    EXPECT_EQ(result.image.width, 1920);
+    EXPECT_EQ(result.image.rgba[0], srgb_byte(0.36f));
+}
+
+namespace {
+
+DisplayImage flat_image(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     DisplayImage image;
-    std::vector<std::string> problems;
-    ASSERT_TRUE(worker.take(image, problems));
-    EXPECT_EQ(image.rgba[8], srgb_byte(0.18f * 2.8284271f));
-    EXPECT_FALSE(worker.take(image, problems));  // nothing new since
+    image.width = 8;
+    image.height = 4;
+    for (int i = 0; i < image.width * image.height; ++i) {
+        image.rgba.insert(image.rgba.end(), {r, g, b, 255});
+    }
+    return image;
+}
+
+const std::uint8_t* pixel(const DisplayImage& image, int x, int y) {
+    return &image.rgba[(static_cast<std::size_t>(y) * image.width + x) * 4];
+}
+
+}  // namespace
+
+TEST(Scopes, ParadeShowsEachChannelsLevel) {
+    using dyeline::designer::kParadeColumns;
+    using dyeline::designer::kParadeGap;
+    const DisplayImage parade = dyeline::designer::rgb_parade(flat_image(200, 100, 30));
+    ASSERT_EQ(parade.width, dyeline::designer::kParadeWidth);
+    ASSERT_EQ(parade.height, dyeline::designer::kParadeHeight);
+    const int column = kParadeColumns / 2;
+    // Each panel lights up at its channel's level, in its own color, and nowhere far from it.
+    EXPECT_GT(pixel(parade, column, 255 - 200)[0], 200);
+    EXPECT_LT(pixel(parade, column, 255 - 100)[0], 60);
+    EXPECT_GT(pixel(parade, kParadeColumns + kParadeGap + column, 255 - 100)[1], 200);
+    EXPECT_GT(pixel(parade, 2 * (kParadeColumns + kParadeGap) + column, 255 - 30)[2], 200);
+    EXPECT_LT(pixel(parade, 2 * (kParadeColumns + kParadeGap) + column, 255 - 200)[2], 60);
+}
+
+TEST(Scopes, VectorscopeShowsGreyAtTheCenterAndRedTowardsItsTarget) {
+    using dyeline::designer::kVectorscopeSize;
+    const int c = kVectorscopeSize / 2;
+    const DisplayImage grey = dyeline::designer::vectorscope(flat_image(128, 128, 128));
+    EXPECT_GT(pixel(grey, c, c)[1], 200);
+    EXPECT_LT(pixel(grey, c + 40, c - 40)[1], 60);
+
+    // Pure red: Cb = -0.2126 / 1.8556, Cr = 0.7874 / 1.5748 = 0.5, so left of center and at
+    // the top edge.
+    const DisplayImage red = dyeline::designer::vectorscope(flat_image(255, 0, 0));
+    const int x = static_cast<int>((0.5f - 0.2126f / 1.8556f) * kVectorscopeSize);
+    EXPECT_GT(pixel(red, x, 0)[1], 200);
+    EXPECT_LT(pixel(red, c + 6, c + 10)[1], 60);  // near the center, off the graticule
 }
