@@ -19,12 +19,14 @@
 #include "tools/color_space.h"
 #include "tools/contrast.h"
 #include "tools/diffusion.h"
+#include "tools/duotone.h"
 #include "tools/exposure.h"
 #include "tools/film.h"
 #include "tools/grain.h"
 #include "tools/halation.h"
 #include "tools/highlight_shoulder.h"
 #include "tools/lens_vignette.h"
+#include "tools/local_contrast.h"
 #include "tools/lut.h"
 #include "tools/matrix.h"
 #include "tools/s_curve.h"
@@ -55,6 +57,8 @@
 #define DL_OP_GRADIENT 16
 #define DL_OP_SPOT 17
 #define DL_OP_FILL 18
+#define DL_OP_DUOTONE 19
+#define DL_OP_LOCAL_CONTRAST 20
 
 // Spatial ops keep their blur size in their last parameter, for the host's render plan.
 #define DL_OP_BLUR_SIZE (DL_OP_PARAMS - 1)
@@ -128,7 +132,7 @@ struct dl_box_args {
 };
 
 DL_DEVICE int dl_is_spatial(int tool) {
-    return tool == DL_OP_DIFFUSION || tool == DL_OP_HALATION;
+    return tool == DL_OP_DIFFUSION || tool == DL_OP_HALATION || tool == DL_OP_LOCAL_CONTRAST;
 }
 
 DL_DEVICE dl_float4 dl_mix(dl_float4 a, dl_float4 b, float t) {
@@ -160,7 +164,7 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
         case DL_OP_HIGHLIGHT_SHOULDER:
             return dl_tool_highlight_shoulder(c, op->p);
         case DL_OP_THREE_WAY:
-            return dl_tool_three_way(c, op->p);
+            return dl_tool_three_way(c, op->p, table);
         case DL_OP_LUT:
             return dl_tool_lut(c, op->p, table);
         case DL_OP_FILM_NEGATIVE:
@@ -175,6 +179,10 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
             return dl_tool_spot(c, op->p, at);
         case DL_OP_FILL:
             return dl_tool_fill(c, op->p, at);
+        case DL_OP_DUOTONE:
+            return dl_tool_duotone(c, op->p);
+        case DL_OP_LOCAL_CONTRAST:
+            return dl_tool_local_contrast_combine(c, op->p, dl_blurred_at(op, work, at));
         case DL_OP_LENS_VIGNETTE:
             return dl_tool_lens_vignette(c, op->p, at);
         case DL_OP_GRAIN:
@@ -195,6 +203,8 @@ DL_DEVICE dl_float4 dl_extract_op(dl_float4 c, DL_CONSTANT const struct dl_op* o
             return dl_tool_diffusion_extract(c, op->p);
         case DL_OP_HALATION:
             return dl_tool_halation_extract(c, op->p);
+        case DL_OP_LOCAL_CONTRAST:
+            return dl_tool_local_contrast_extract(c, op->p);
         default:
             return dl_make_float4(0.0f, 0.0f, 0.0f, c.w);
     }

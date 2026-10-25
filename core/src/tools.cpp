@@ -145,30 +145,242 @@ bool shadows_highlights_is_identity(const ParamValues& v) {
 // rising with its input, as for Shadows/Highlights.
 constexpr double kThreeWayMaxStops = 1.0;
 
-void encode_three_way(const ParamValues& v, dl_op& op) {
+// A tint's stops per channel, from a hue (degrees) and an amount (0 to 1).
+void tint_stops(double hue_degrees, double amount, double out[3]) {
+    const double hue = hue_degrees * kPi / 180.0;
+    double mean = 0.0;
+    for (int k = 0; k < 3; ++k) {
+        out[k] = std::cos(hue - k * 2.0 * kPi / 3.0);
+        mean += kLumaWeights[k] * out[k];
+    }
+    for (int k = 0; k < 3; ++k) {
+        out[k] = (out[k] - mean) * amount * kThreeWayMaxStops;
+    }
+}
+
+// Fills the 3-Way op from each range's stops (shadows, midtones, highlights).
+void set_three_way(const double stops[3][3], double pivot, dl_op& op) {
     op.tool = DL_OP_THREE_WAY;
     for (int range = 0; range < 3; ++range) {
-        const double hue = v[static_cast<std::size_t>(range * 2)] * kPi / 180.0;
-        const double amount = v[static_cast<std::size_t>(range * 2 + 1)];
-        double d[3];
-        double mean = 0.0;
         for (int k = 0; k < 3; ++k) {
-            d[k] = std::cos(hue - k * 2.0 * kPi / 3.0);
-            mean += kLumaWeights[k] * d[k];
-        }
-        for (int k = 0; k < 3; ++k) {
-            op.p[range * 3 + k] = static_cast<float>((d[k] - mean) * amount * kThreeWayMaxStops);
+            op.p[range * 3 + k] = static_cast<float>(stops[range][k]);
         }
     }
-    op.p[9] = static_cast<float>(v[6]);
+    op.p[9] = static_cast<float>(pivot);
     op.p[10] = static_cast<float>(kShadowsHighlightsWidth);
     for (int k = 0; k < 3; ++k) {
         op.p[11 + k] = static_cast<float>(kLumaWeights[k]);
     }
+    op.p[14] = -1.0f;  // no EQ
+}
+
+void encode_three_way(const ParamValues& v, dl_op& op) {
+    double stops[3][3];
+    for (int range = 0; range < 3; ++range) {
+        tint_stops(v[static_cast<std::size_t>(range * 2)], v[static_cast<std::size_t>(range * 2 + 1)],
+                   stops[range]);
+    }
+    set_three_way(stops, v[6], op);
+}
+
+// The 3-Way Grade's HSL tab (hue, saturation and lightness for six hue bands) and Sat EQ tab
+// (saturation for five luminance bands) follow the wheels' seven parameters.
+constexpr std::size_t kHslFirst = 7;
+constexpr std::size_t kSatEqFirst = kHslFirst + DL_EQ_HUE_BANDS * 3;
+
+bool three_way_eq_is_identity(const ParamValues& v) {
+    for (std::size_t i = kHslFirst; i < v.size(); ++i) {
+        const bool scale = i >= kSatEqFirst || (i - kHslFirst) % 3 == 1;
+        if (v[i] != (scale ? 1.0 : 0.0)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool prepare_three_way(PrepareContext& context, dl_op& op, std::string& problem) {
+    const ParamValues& v = context.values;
+    encode_three_way(v, op);
+    if (three_way_eq_is_identity(v)) {
+        return true;
+    }
+    float eq[DL_EQ_TABLE_FLOATS];
+    for (int band = 0; band < DL_EQ_HUE_BANDS; ++band) {
+        const std::size_t at = kHslFirst + static_cast<std::size_t>(band) * 3;
+        eq[band * 3] = static_cast<float>(v[at] * kPi / 180.0);
+        eq[band * 3 + 1] = static_cast<float>(v[at + 1]);
+        eq[band * 3 + 2] = static_cast<float>(v[at + 2]);
+    }
+    for (int band = 0; band < DL_EQ_SAT_BANDS; ++band) {
+        eq[DL_EQ_HUE_BANDS * 3 + band] = static_cast<float>(v[kSatEqFirst + static_cast<std::size_t>(band)]);
+    }
+    op.p[14] = static_cast<float>(context.table.size());
+    if (context.table.size() + DL_EQ_TABLE_FLOATS > (std::size_t{1} << 24)) {
+        problem = "the look's tables are too large to load together";
+        return false;
+    }
+    context.table.insert(context.table.end(), eq, eq + DL_EQ_TABLE_FLOATS);
+    return true;
 }
 
 bool three_way_is_identity(const ParamValues& v) {
-    return v[1] == 0.0 && v[3] == 0.0 && v[5] == 0.0;
+    return v[1] == 0.0 && v[3] == 0.0 && v[5] == 0.0 && three_way_eq_is_identity(v);
+}
+
+ParamSpec in_tab(ParamSpec spec, const char* group) {
+    spec.group = group;
+    return spec;
+}
+
+std::vector<ParamSpec> three_way_params() {
+    std::vector<ParamSpec> params = {{"shadows-hue", "Shadows Hue", 220.0, 0.0, 360.0},
+                                     {"shadows-amount", "Shadows Amount", 0.0, 0.0, 1.0},
+                                     {"midtones-hue", "Midtones Hue", 40.0, 0.0, 360.0},
+                                     {"midtones-amount", "Midtones Amount", 0.0, 0.0, 1.0},
+                                     {"highlights-hue", "Highlights Hue", 50.0, 0.0, 360.0},
+                                     {"highlights-amount", "Highlights Amount", 0.0, 0.0, 1.0},
+                                     {"pivot", "Pivot", 0.18, 0.001, 10.0}};
+    static const char* const kHsl[DL_EQ_HUE_BANDS][6] = {
+        {"red-hue", "Red Hue", "red-saturation", "Red Saturation", "red-lightness", "Red Lightness"},
+        {"yellow-hue", "Yellow Hue", "yellow-saturation", "Yellow Saturation", "yellow-lightness",
+         "Yellow Lightness"},
+        {"green-hue", "Green Hue", "green-saturation", "Green Saturation", "green-lightness",
+         "Green Lightness"},
+        {"cyan-hue", "Cyan Hue", "cyan-saturation", "Cyan Saturation", "cyan-lightness",
+         "Cyan Lightness"},
+        {"blue-hue", "Blue Hue", "blue-saturation", "Blue Saturation", "blue-lightness",
+         "Blue Lightness"},
+        {"magenta-hue", "Magenta Hue", "magenta-saturation", "Magenta Saturation",
+         "magenta-lightness", "Magenta Lightness"}};
+    for (const auto& band : kHsl) {
+        params.push_back(in_tab({band[0], band[1], 0.0, -60.0, 60.0}, "HSL"));
+        params.push_back(in_tab({band[2], band[3], 1.0, 0.0, 2.0}, "HSL"));
+        params.push_back(in_tab({band[4], band[5], 0.0, -1.0, 1.0}, "HSL"));
+    }
+    static const char* const kSatEq[DL_EQ_SAT_BANDS][2] = {
+        {"sat-deep-shadows", "Deep Shadows"}, {"sat-shadows", "Shadows"},
+        {"sat-midtones", "Midtones"}, {"sat-highlights", "Highlights"},
+        {"sat-bright-highlights", "Bright Highlights"}};
+    for (const auto& band : kSatEq) {
+        params.push_back(in_tab({band[0], band[1], 1.0, 0.0, 2.0}, "Sat EQ"));
+    }
+    return params;
+}
+
+// 4-Way Wheels: the 3-Way Grade's three ranges plus an Offset wheel that reaches every tone,
+// each wheel a hue, an amount and stops of exposure. The ranges' weights add up to 1, so the
+// Offset is added to all three.
+void encode_four_way(const ParamValues& v, dl_op& op) {
+    double offset[3];
+    tint_stops(v[9], v[10], offset);
+    double stops[3][3];
+    for (int range = 0; range < 3; ++range) {
+        const std::size_t at = static_cast<std::size_t>(range) * 3;
+        tint_stops(v[at], v[at + 1], stops[range]);
+        for (int k = 0; k < 3; ++k) {
+            stops[range][k] += v[at + 2] + offset[k] + v[11];
+        }
+    }
+    set_three_way(stops, v[12], op);
+}
+
+bool four_way_is_identity(const ParamValues& v) {
+    for (std::size_t wheel = 0; wheel < 4; ++wheel) {
+        if (v[wheel * 3 + 1] != 0.0 || v[wheel * 3 + 2] != 0.0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Blockbuster: pulls every color toward one warm-cool axis, orange against teal by default,
+// and spreads colors along it. In the plane of colors across grey (with luminance taken out,
+// so luminance never changes), the part of a color off the axis shrinks by Amount and the part
+// along it grows by half of Amount. It is linear, so it's a matrix.
+void encode_blockbuster(const ParamValues& v, dl_op& op) {
+    const double amount = v[0];
+    double u[3];
+    tint_stops(v[1], 1.0, u);  // a direction in that plane
+    const double norm = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+    // c' = Y + P (c - Y), with P scaling the axis by (1 + amount / 2) and the rest by
+    // (1 - amount); c - Y = (I - 1 w^T) c.
+    double p[3][3];
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            const double along = u[r] * u[c] / norm;
+            p[r][c] = (1.0 + 0.5 * amount) * along + (1.0 - amount) * ((r == c ? 1.0 : 0.0) - along);
+        }
+    }
+    double m[3][3];
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            double sum = kLumaWeights[c];  // Y
+            for (int k = 0; k < 3; ++k) {
+                sum += p[r][k] * ((k == c ? 1.0 : 0.0) - kLumaWeights[c]);
+            }
+            m[r][c] = sum;
+        }
+    }
+    set_matrix(m, op);
+}
+
+bool amount_is_zero(const ParamValues& v) {
+    return v[0] == 0.0;
+}
+
+// Color Filter: a colored filter on the lens. It passes its own hue and takes up to twice
+// Density stops from the opposite one; with Preserve Brightness on, the result is scaled so
+// greys keep their brightness, as a camera's exposure would make up for the filter.
+void encode_color_filter(const ParamValues& v, dl_op& op) {
+    const double hue = v[0] * kPi / 180.0;
+    double gain[3];
+    double luma = 0.0;
+    for (int k = 0; k < 3; ++k) {
+        gain[k] = std::exp2(-v[1] * (1.0 - std::cos(hue - k * 2.0 * kPi / 3.0)));
+        luma += kLumaWeights[k] * gain[k];
+    }
+    const double scale = v[2] >= 0.5 ? 1.0 / luma : 1.0;
+    const double m[3][3] = {{gain[0] * scale, 0.0, 0.0},
+                            {0.0, gain[1] * scale, 0.0},
+                            {0.0, 0.0, gain[2] * scale}};
+    set_matrix(m, op);
+}
+
+bool color_filter_is_identity(const ParamValues& v) {
+    return v[1] == 0.0;
+}
+
+// Duotone: a tint for the shadows and one for the highlights. Each is 1 plus Saturation
+// times the hue's direction, its negative parts clipped, scaled so its luminance is 1.
+void duotone_tint(double hue_degrees, double saturation, float out[3]) {
+    const double hue = hue_degrees * kPi / 180.0;
+    double t[3];
+    double mean = 0.0;
+    for (int k = 0; k < 3; ++k) {
+        t[k] = std::cos(hue - k * 2.0 * kPi / 3.0);
+        mean += kLumaWeights[k] * t[k];
+    }
+    double luma = 0.0;
+    for (int k = 0; k < 3; ++k) {
+        t[k] = std::max(0.0, 1.0 + saturation * (t[k] - mean));
+        luma += kLumaWeights[k] * t[k];
+    }
+    for (int k = 0; k < 3; ++k) {
+        out[k] = static_cast<float>(t[k] / luma);
+    }
+}
+
+constexpr double kDuotoneHalfWidth = 3.0;  // stops
+
+void encode_duotone(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_DUOTONE;
+    duotone_tint(v[0], v[2], op.p);
+    duotone_tint(v[1], v[2], op.p + 3);
+    op.p[6] = static_cast<float>(v[3]);
+    op.p[7] = static_cast<float>(kDuotoneHalfWidth);
+    for (int k = 0; k < 3; ++k) {
+        op.p[8 + k] = static_cast<float>(kLumaWeights[k]);
+    }
 }
 
 // Highlight Shoulder: the roll-off starts at Start and approaches Headroom stops above it.
@@ -296,9 +508,6 @@ void encode_bleach_bypass(const ParamValues& v, dl_op& op) {
     }
 }
 
-bool amount_is_zero(const ParamValues& v) {
-    return v[0] == 0.0;
-}
 
 // 2-Strip: the two-color process, which recorded only a red and a green-blue record. Red
 // stays; green and blue both become their average, so the image holds only red-orange and
@@ -311,20 +520,7 @@ void encode_two_strip(const ParamValues& v, dl_op& op) {
     set_matrix(m, op);
 }
 
-// The selective tools (see selective.h). A tint's stops are the 3-Way Grade's: a direction
-// around the grey axis with its luminance-weighted mean taken away.
-void tint_stops(double hue_degrees, double amount, double out[3]) {
-    const double hue = hue_degrees * kPi / 180.0;
-    double mean = 0.0;
-    for (int k = 0; k < 3; ++k) {
-        out[k] = std::cos(hue - k * 2.0 * kPi / 3.0);
-        mean += kLumaWeights[k] * out[k];
-    }
-    for (int k = 0; k < 3; ++k) {
-        out[k] = (out[k] - mean) * amount * kThreeWayMaxStops;
-    }
-}
-
+// The selective tools (see selective.h).
 void set_gradient(const double stops[3], const ParamValues& v, std::size_t geometry, dl_op& op) {
     op.tool = DL_OP_GRADIENT;
     for (int k = 0; k < 3; ++k) {
@@ -451,6 +647,17 @@ bool diffusion_is_identity(const ParamValues& v) {
     return v[0] == 0.0;
 }
 
+// Local Contrast: see local_contrast.h. Size is the blur's, in percent of the frame's width.
+void encode_local_contrast(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_LOCAL_CONTRAST;
+    op.p[0] = static_cast<float>(v[0]);
+    op.p[1] = static_cast<float>(0.18 / 64.0);
+    for (int k = 0; k < 3; ++k) {
+        op.p[2 + k] = static_cast<float>(kLumaWeights[k]);
+    }
+    set_blur_size(v[1], op);
+}
+
 // Telecine Net: a fine net in the light path scatters a share of every pixel's light evenly
 // over a wide area: Diffusion with every tone scattering alike. Shadows near bright areas
 // lift and contrast softens, while the frame's total light stays the same.
@@ -515,15 +722,36 @@ std::vector<ToolSpec> make_tools() {
                      {{"start", "Start", 1.0, 0.05, 16.0},
                       {"headroom", "Headroom", 1.5, 0.1, 8.0}},
                      nullptr, encode_highlight_shoulder, never_identity, nullptr});
-    tools.push_back({"three-way", "3-Way Grade", ToolCategory::Matte, 1,
+    // Version 2 adds the HSL and Sat EQ tabs; their defaults change nothing, so version 1
+    // entries need no migration.
+    tools.push_back({"three-way", "3-Way Grade", ToolCategory::Matte, 2, three_way_params(),
+                     nullptr, encode_three_way, three_way_is_identity, prepare_three_way});
+    tools.back().main_tab = "Wheels";
+    tools.push_back({"four-way", "4-Way Wheels", ToolCategory::Matte, 1,
                      {{"shadows-hue", "Shadows Hue", 220.0, 0.0, 360.0},
                       {"shadows-amount", "Shadows Amount", 0.0, 0.0, 1.0},
+                      {"shadows-exposure", "Shadows Exposure", 0.0, -2.0, 2.0},
                       {"midtones-hue", "Midtones Hue", 40.0, 0.0, 360.0},
                       {"midtones-amount", "Midtones Amount", 0.0, 0.0, 1.0},
+                      {"midtones-exposure", "Midtones Exposure", 0.0, -2.0, 2.0},
                       {"highlights-hue", "Highlights Hue", 50.0, 0.0, 360.0},
                       {"highlights-amount", "Highlights Amount", 0.0, 0.0, 1.0},
+                      {"highlights-exposure", "Highlights Exposure", 0.0, -2.0, 2.0},
+                      {"offset-hue", "Offset Hue", 40.0, 0.0, 360.0},
+                      {"offset-amount", "Offset Amount", 0.0, 0.0, 1.0},
+                      {"offset-exposure", "Offset Exposure", 0.0, -4.0, 4.0},
                       {"pivot", "Pivot", 0.18, 0.001, 10.0}},
-                     nullptr, encode_three_way, three_way_is_identity, nullptr});
+                     nullptr, encode_four_way, four_way_is_identity, nullptr});
+    tools.push_back({"blockbuster", "Blockbuster", ToolCategory::Matte, 1,
+                     {{"amount", "Amount", 0.6, 0.0, 1.0},
+                      {"warm-hue", "Warm Hue", 30.0, 0.0, 360.0}},
+                     nullptr, encode_blockbuster, amount_is_zero, nullptr});
+    tools.push_back({"duotone", "Duotone", ToolCategory::Matte, 1,
+                     {{"shadows-hue", "Shadows Hue", 220.0, 0.0, 360.0},
+                      {"highlights-hue", "Highlights Hue", 40.0, 0.0, 360.0},
+                      {"saturation", "Saturation", 0.4, 0.0, 1.0},
+                      {"pivot", "Pivot", 0.18, 0.001, 10.0}},
+                     nullptr, encode_duotone, never_identity, nullptr});
     tools.push_back({"lut", "LUT", ToolCategory::Matte, 1,
                      {{"gamma", "LUT Gamma", 1.0, 0.2, 5.0}},
                      nullptr, encode_unused, never_identity, prepare_lut, "file"});
@@ -585,6 +813,11 @@ std::vector<ToolSpec> make_tools() {
                       {"size", "Size", 0.3, 0.0, 2.0},
                       {"softness", "Softness", 0.3, 0.01, 2.0}},
                      nullptr, encode_fill, fill_is_identity, nullptr, nullptr, false, kSpotHandles});
+    tools.push_back({"color-filter", "Color Filter", ToolCategory::Lens, 1,
+                     {{"hue", "Hue", 30.0, 0.0, 360.0},
+                      {"density", "Density", 0.3, 0.0, 2.0},
+                      {"preserve", "Preserve Brightness", 1.0, 0.0, 1.0, ParamKind::Toggle}},
+                     nullptr, encode_color_filter, color_filter_is_identity, nullptr});
     tools.push_back({"lens-vignette", "Lens Vignette", ToolCategory::Lens, 1,
                      {{"amount", "Amount", -1.0, -4.0, 4.0},
                       {"size", "Size", 0.5, 0.0, 2.0},
@@ -606,6 +839,10 @@ std::vector<ToolSpec> make_tools() {
                       {"size", "Size", 1.0, 0.05, 10.0},
                       {"highlights", "Highlights", 0.5, 0.0, 1.0}},
                      nullptr, encode_diffusion, diffusion_is_identity, nullptr, nullptr, false});
+    tools.push_back({"local-contrast", "Local Contrast", ToolCategory::Post, 1,
+                     {{"amount", "Amount", 0.3, -1.0, 1.0},
+                      {"size", "Size", 1.5, 0.1, 10.0}},
+                     nullptr, encode_local_contrast, amount_is_zero, nullptr, nullptr, false});
     tools.push_back({"telecine-net", "Telecine Net", ToolCategory::Post, 1,
                      {{"amount", "Amount", 0.3, 0.0, 1.0},
                       {"size", "Size", 4.0, 0.5, 10.0}},

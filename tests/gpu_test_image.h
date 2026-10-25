@@ -56,7 +56,7 @@ inline RenderGeometry window_geometry(int width, int height) {
 
 // A look using every tool at partial strengths, under a partial overall strength, so each
 // tool's math, op order and both blends run on the GPU. It converts sRGB in to LogC4 out
-// with full color management, so both transforms and their matrices run too. Two spatial tools, with per-pixel
+// with full color management, so both transforms and their matrices run too. Three spatial tools, with per-pixel
 // tools between them, check that each blur sees the chain up to its own tool.
 inline CompiledChain test_chain() {
     // A curved 3D LUT under LUT Gamma 2, with the frame's values reaching past its domain.
@@ -77,7 +77,7 @@ inline CompiledChain test_chain() {
         entry.params = std::move(params);
         look.chain.push_back(std::move(entry));
     };
-    add("exposure", 1.0, {{"stops", 1.3}});
+    add("local-contrast", 1.0, {{"amount", 0.6}, {"size", 2.0}});
     add("halation", 0.8, {{"amount", 1.2}, {"threshold", 0.6}, {"size", 3.0}});
     add("contrast", 0.9, {{"contrast", 1.4}, {"pivot", 0.2}});
     add("s-curve", 1.0, {{"amount", 0.6}, {"range", 4.0}});
@@ -88,7 +88,10 @@ inline CompiledChain test_chain() {
     add("bleach-bypass", 0.7, {{"amount", 0.8}, {"pivot", 0.25}});
     add("three-way", 0.8, {{"shadows-hue", 210.0}, {"shadows-amount", 0.7},
                            {"midtones-hue", 30.0}, {"midtones-amount", 0.3},
-                           {"highlights-hue", 60.0}, {"highlights-amount", 0.5}});
+                           {"highlights-hue", 60.0}, {"highlights-amount", 0.5},
+                           {"red-hue", 20.0}, {"yellow-saturation", 1.4},
+                           {"blue-lightness", -0.5}, {"cyan-saturation", 0.5},
+                           {"sat-shadows", 0.6}, {"sat-bright-highlights", 1.3}});
     add("lut", 0.9, {{"file", lut.path()}, {"gamma", 2.0}});
     add("diffusion", 0.9, {{"amount", 0.7}, {"size", 5.0}, {"highlights", 0.4}});
     add("lens-vignette", 0.9, {{"amount", -1.5}, {"size", 0.2}, {"softness", 0.7},
@@ -103,7 +106,8 @@ inline CompiledChain test_chain() {
 }
 
 // A chain without table data, so the backends' path for a look with no LUT runs too. It
-// holds the tools that depend on where a pixel is, beside Lens Vignette and Grain above.
+// holds the tools that depend on where a pixel is, beside Lens Vignette and Grain above, and
+// the tools added since that chain filled up.
 inline CompiledChain table_free_chain() {
     Look look;
     auto add = [&](const char* id, nlohmann::json params) {
@@ -114,6 +118,9 @@ inline CompiledChain table_free_chain() {
         look.chain.push_back(std::move(entry));
     };
     add("exposure", {{"stops", 0.7}});
+    add("four-way", {{"shadows-hue", 200.0}, {"shadows-amount", 0.5}, {"midtones-exposure", 0.4},
+                     {"offset-hue", 30.0}, {"offset-amount", 0.2}, {"offset-exposure", 0.7}});
+    add("duotone", {{"saturation", 0.6}, {"pivot", 0.3}});
     add("gradient-tint", {{"hue", 200.0}, {"amount", 0.8}, {"angle", 30.0}, {"softness", 0.5}});
     add("grad-exposure", {{"stops", -1.2}, {"center-y", 0.2}, {"angle", -100.0}});
     add("spot-exposure", {{"stops", 0.8}, {"center-x", 0.3}, {"size", 0.2}, {"softness", 0.4}});

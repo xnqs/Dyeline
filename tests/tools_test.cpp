@@ -52,7 +52,8 @@ TEST(Tools, AllAreRegistered) {
                            "channel-mixer", "shadows-highlights", "highlight-shoulder", "three-way", "lut",
                            "lens-vignette", "grain", "diffusion", "halation", "film-negative", "film-print", "bleach-bypass", "two-strip",
                            "telecine-net", "gradient-tint", "grad-exposure", "spot-exposure",
-                           "fill-light", "spot-fill"}) {
+                           "fill-light", "spot-fill", "four-way", "blockbuster", "color-filter",
+                           "duotone", "local-contrast"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }
@@ -688,6 +689,132 @@ TEST(SpotFill, LiftsShadowsInsideTheSpot) {
                                40, 20, 0, 0.01f);
     EXPECT_NEAR(pixel(out, 20, 10), 0.02f, 1e-4f);
     EXPECT_NEAR(pixel(out, 0, 0), 0.01f, 1e-6f);
+}
+
+// Chroma across grey: the distance from the channels' mean.
+float chroma(const std::vector<float>& c) {
+    const float m = (c[0] + c[1] + c[2]) / 3.0f;
+    return std::sqrt((c[0] - m) * (c[0] - m) + (c[1] - m) * (c[1] - m) + (c[2] - m) * (c[2] - m));
+}
+
+TEST(ThreeWayEq, HslBandsTurnScaleAndLightenTheirHue) {
+    const std::vector<float> red = {0.4f, 0.1f, 0.1f, 1.0f};
+    const std::vector<float> blue = {0.1f, 0.1f, 0.4f, 1.0f};
+    const ToolEntry grey_reds = tool("three-way", {{"red-saturation", 0.0}});
+    EXPECT_FALSE(skipped(grey_reds));
+    const auto out = run(grey_reds, red);
+    EXPECT_NEAR(out[0], 0.2f, 1e-5f);  // grey, at the channels' mean
+    EXPECT_NEAR(out[1], 0.2f, 1e-5f);
+    EXPECT_NEAR(out[2], 0.2f, 1e-5f);
+    const auto untouched = run(grey_reds, blue);
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_NEAR(untouched[k], blue[k], 1e-6f);
+    }
+    // Sixty degrees turns red into yellow, keeping its saturation.
+    const auto yellow = run(tool("three-way", {{"red-hue", 60.0}}), red);
+    EXPECT_NEAR(yellow[0], yellow[1], 1e-5f);
+    EXPECT_GT(yellow[0], yellow[2] + 0.2f);
+    EXPECT_NEAR(chroma(yellow), chroma(red), 1e-5f);
+    // Lightness adds stops to colors, not greys.
+    const auto light = run(tool("three-way", {{"red-lightness", 1.0}}), red);
+    EXPECT_NEAR(light[0], 0.8f, 1e-5f);
+    const auto grey_out = run(tool("three-way", {{"red-lightness", 1.0}}), grey(0.18f));
+    EXPECT_NEAR(grey_out[0], 0.18f, 1e-6f);
+    // Halfway between two bands, each gives half.
+    const auto orange = run(tool("three-way", {{"red-saturation", 0.0}}), {0.4f, 0.25f, 0.1f, 1.0f});
+    EXPECT_NEAR(chroma(orange), 0.5f * chroma({0.4f, 0.25f, 0.1f, 1.0f}), 1e-5f);
+}
+
+TEST(ThreeWayEq, SatEqScalesSaturationByLuminance) {
+    const ToolEntry eq = tool("three-way", {{"sat-deep-shadows", 0.0}, {"sat-highlights", 2.0}});
+    std::vector<float> red = {0.4f, 0.1f, 0.1f, 1.0f};
+    const float to_pivot = 0.18f / luma(red);
+    for (int k = 0; k < 3; ++k) {
+        red[k] *= to_pivot;
+    }
+    const auto mid = run(eq, red);
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_NEAR(mid[k], red[k], 1e-5f);
+    }
+    std::vector<float> dark = red;
+    for (int k = 0; k < 3; ++k) {
+        dark[k] /= 64.0f;  // six stops under
+    }
+    EXPECT_NEAR(chroma(run(eq, dark)), 0.0f, 1e-7f);
+    std::vector<float> bright = red;
+    for (int k = 0; k < 3; ++k) {
+        bright[k] *= 4.0f;  // two stops over
+    }
+    EXPECT_NEAR(chroma(run(eq, bright)), 2.0f * chroma(bright), 1e-4f);
+}
+
+TEST(FourWay, OffsetReachesEveryToneAndEachWheelHasExposure) {
+    const ToolEntry offset = tool("four-way", {{"offset-exposure", 1.0}});
+    for (float stops : {-8.0f, 0.0f, 8.0f}) {
+        const float in = 0.18f * std::exp2(stops);
+        EXPECT_NEAR(run(offset, grey(in))[1], 2.0f * in, 1e-4f * in) << stops;
+    }
+    const ToolEntry shadows = tool("four-way", {{"shadows-exposure", -1.0}});
+    EXPECT_NEAR(run(shadows, grey(0.18f / 64.0f))[0], 0.09f / 64.0f, 1e-7f);
+    EXPECT_NEAR(run(shadows, grey(0.18f * 64.0f))[0], 0.18f * 64.0f, 1e-4f);
+    // An offset tint leans every tone the same way.
+    const ToolEntry warm = tool("four-way", {{"offset-hue", 30.0}, {"offset-amount", 0.5}});
+    for (float in : {0.002f, 0.18f, 10.0f}) {
+        const auto out = run(warm, grey(in));
+        EXPECT_GT(out[0], out[2]) << in;
+        EXPECT_NEAR(std::log2(luma(out) / in), 0.0f, 0.15f) << in;
+    }
+    EXPECT_TRUE(skipped(tool("four-way", {{"offset-hue", 90.0}, {"pivot", 0.5}})));
+}
+
+TEST(Blockbuster, KeepsLuminanceAndPullsColorsToTheAxis) {
+    const ToolEntry look = tool("blockbuster", {{"amount", 0.6}});
+    const auto g = run(look, grey(0.18f));
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_NEAR(g[k], 0.18f, 1e-6f);
+    }
+    const std::vector<float> orange = {0.3f, 0.18f, 0.08f, 1.0f};
+    const std::vector<float> green = {0.1f, 0.25f, 0.1f, 1.0f};
+    const auto warmer = run(look, orange);
+    const auto greyer = run(look, green);
+    EXPECT_NEAR(luma(warmer), luma(orange), 1e-6f);
+    EXPECT_NEAR(luma(greyer), luma(green), 1e-6f);
+    EXPECT_GT(warmer[0] - warmer[2], orange[0] - orange[2]);  // spread along the axis
+    EXPECT_LT(chroma(greyer), 0.6f * chroma(green));          // off it, pulled in
+    EXPECT_TRUE(skipped(tool("blockbuster", {{"amount", 0.0}})));
+}
+
+TEST(ColorFilter, PassesItsHueAndCanKeepGreysBrightness) {
+    const auto kept = run(tool("color-filter", {{"hue", 30.0}, {"density", 0.5}}), grey(0.18f));
+    EXPECT_NEAR(luma(kept), 0.18f, 1e-6f);
+    EXPECT_GT(kept[0], kept[2]);
+    const auto dark = run(tool("color-filter", {{"hue", 30.0}, {"density", 0.5}, {"preserve", 0.0}}),
+                          grey(0.18f));
+    EXPECT_LT(luma(dark), 0.18f);
+    EXPECT_NEAR(dark[0] / dark[2], kept[0] / kept[2], 1e-5f);
+    EXPECT_TRUE(skipped(tool("color-filter", {{"density", 0.0}})));
+}
+
+TEST(Duotone, KeepsLuminanceAndTintsShadowsAndHighlights) {
+    const ToolEntry duo = tool("duotone", {{"shadows-hue", 220.0}, {"highlights-hue", 40.0}});
+    const std::vector<float> colors[] = {{0.002f, 0.003f, 0.001f, 1.0f},
+                                         {0.4f, 0.1f, 0.1f, 1.0f},
+                                         {5.0f, 9.0f, 12.0f, 1.0f}};
+    for (const auto& c : colors) {
+        EXPECT_NEAR(luma(run(duo, c)) / luma(c), 1.0f, 1e-5f);
+    }
+    const auto shadow = run(duo, grey(0.18f / 64.0f));
+    const auto highlight = run(duo, grey(0.18f * 64.0f));
+    EXPECT_GT(shadow[2], shadow[0]);  // cool
+    EXPECT_GT(highlight[0], highlight[2]);  // warm
+    // Two colors of the same luminance come out the same.
+    const auto a = run(duo, {0.4f, 0.1f, 0.1f, 1.0f});
+    const float y = luma({0.4f, 0.1f, 0.1f, 1.0f});
+    const auto b = run(duo, grey(y));
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_NEAR(a[k], b[k], 1e-6f);
+    }
+    EXPECT_FALSE(skipped(tool("duotone", {})));
 }
 
 }  // namespace

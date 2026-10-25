@@ -36,6 +36,8 @@ struct ParamSpec {
     // A Choice's options, in index order. Looks store the index, so options are only ever
     // added to the end.
     std::vector<const char*> choices = {};
+    // The designer's tab for this parameter, for tools with many: null for the first tab.
+    const char* group = nullptr;
 };
 
 // A control the Look Designer draws over its preview, for a tool that depends on where a pixel
@@ -93,6 +95,9 @@ struct ToolSpec {
     bool color_only = true;
     // On-image handles, Point first when there is one.
     std::vector<HandleSpec> handles = {};
+    // When parameters have groups, the name of the designer's first tab, which holds the
+    // ungrouped ones.
+    const char* main_tab = "Main";
 };
 
 // All registered tools, in tools-drawer order.

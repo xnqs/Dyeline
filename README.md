@@ -10,8 +10,10 @@ workflow of Magic Bullet Looks.
 **Status:** Milestone 2 in progress, after the 0.1 alpha. The plugin renders a look, a chain of
 tools, on the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS) when
 the host provides one, else on its own OpenCL or Metal device, else on the CPU. The tools so far are Exposure, Contrast, S Curve, Hue/Saturation, Black & White, Channel
-Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade, LUT, Film Negative, Film Print,
-Bleach Bypass, 2-Strip, Gradient Tint, Grad Exposure, Spot Exposure, Fill Light, Spot Fill, Lens Vignette, Grain, Diffusion Filter, Telecine Net and Halation (see
+Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade (with HSL and Sat EQ), 4-Way Wheels,
+Blockbuster, Duotone, LUT, Film Negative, Film Print, Bleach Bypass, 2-Strip, Gradient Tint,
+Grad Exposure, Spot Exposure, Fill Light, Spot Fill, Color Filter, Lens Vignette, Grain,
+Diffusion Filter, Local Contrast, Telecine Net and Halation (see
 [docs/tools.md](docs/tools.md)). The Look Designer edits the chain, the tools and the color
 settings, with a preview of the host's current frame, its scopes, and a looks browser with 22
 bundled looks. It is not useful for real work yet.
@@ -124,7 +126,7 @@ The bundle ships `dyeline-designer` next to the plugin binary: a window for edit
   software and cameras that can't run Dyeline. The LUT takes values in the look's input space
   and gives values in its output space, so set the input to the footage's log space: a
   scene-linear input clips above 1. Tools that depend on where a pixel is, or on its
-  neighbors (the gradient and spot tools, Lens Vignette, Grain, Diffusion Filter, Telecine Net, Halation), can't be held by a LUT and are
+  neighbors (the gradient and spot tools, Lens Vignette, Grain, Diffusion Filter, Local Contrast, Telecine Net, Halation), can't be held by a LUT and are
   left out; the dialog lists them and the file's comments name them.
 - Ctrl+Z and Ctrl+Shift+Z (Cmd on macOS) undo and redo.
 

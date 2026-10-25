@@ -105,6 +105,77 @@ without brightening or darkening, and tones never swap places.
 | `highlights-amount` | 0 | 0 to 1 | Highlights tint strength. |
 | `pivot` | 0.18 | 0.001 to 10 | The center of the midtones. |
 
+In the Look Designer these are the **Wheels** tab. Two more tabs work on hue and saturation,
+after the wheels, in the plane across grey (so saturation keeps the channels' average):
+
+**HSL** has a hue, a saturation and a lightness for each of six hue bands, 60 degrees apart:
+`red`, `yellow`, `green`, `cyan`, `blue` and `magenta`. A color between two bands takes a share
+of each, so the changes blend smoothly around the hue circle. Lightness reaches colors, not
+greys: its effect grows with saturation, fully from about a third of the color's level.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `red-hue` (and `yellow-hue` and so on) | 0 | -60 to 60 | Turns the band's colors, in degrees: 60 takes red to yellow. |
+| `red-saturation` (and so on) | 1 | 0 to 2 | Scales the band's saturation: 0 is grey, 2 twice as saturated. |
+| `red-lightness` (and so on) | 0 | -1 to 1 | Stops added to the band's colors. |
+
+**Sat EQ** scales saturation by luminance, with five bands 4 and 2 stops under the pivot, at
+it, and 2 and 4 stops over; beyond the outer bands their value holds.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `sat-deep-shadows` | 1 | 0 to 2 | Saturation 4 stops under the pivot and below. |
+| `sat-shadows` | 1 | 0 to 2 | Saturation 2 stops under. |
+| `sat-midtones` | 1 | 0 to 2 | Saturation at the pivot. |
+| `sat-highlights` | 1 | 0 to 2 | Saturation 2 stops over. |
+| `sat-bright-highlights` | 1 | 0 to 2 | Saturation 4 stops over and above. |
+
+Looks saved before these tabs (version 1) load unchanged, since every default leaves the image
+alone.
+
+## 4-Way Wheels (`four-way`)
+
+The 3-Way Grade's three wheels, each with its own exposure, plus an **Offset** wheel that
+reaches every tone alike, like the Offset ball of a grading panel. The ranges blend as in the
+3-Way Grade, and their weights add up to 1, so the Offset's tint and exposure apply evenly from
+the deepest shadows to the brightest highlights.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `shadows-hue`, `shadows-amount` | 220, 0 | 0 to 360, 0 to 1 | Shadows tint, as in the 3-Way Grade. |
+| `shadows-exposure` | 0 | -2 to 2 | Stops for the shadows. |
+| `midtones-hue`, `midtones-amount`, `midtones-exposure` | 40, 0, 0 | as above | The midtones' wheel. |
+| `highlights-hue`, `highlights-amount`, `highlights-exposure` | 50, 0, 0 | as above | The highlights' wheel. |
+| `offset-hue`, `offset-amount` | 40, 0 | 0 to 360, 0 to 1 | A tint for every tone. |
+| `offset-exposure` | 0 | -4 to 4 | Stops for every tone. |
+| `pivot` | 0.18 | 0.001 to 10 | The center of the midtones. |
+
+## Blockbuster (`blockbuster`)
+
+The orange and teal look of many action films: every color is pulled toward one warm-cool axis
+through grey and spread along it, so skin goes warmer and backgrounds cooler while greens,
+magentas and the like lose saturation. Luminance never changes. With the luminance taken out,
+the part of a color along the axis grows by half of Amount and the part across it shrinks by
+Amount.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 0.6 | 0 to 1 | How strongly colors are pulled to the axis; at 1 only the axis is left. |
+| `warm-hue` | 30 | 0 to 360 | The warm end of the axis, in degrees; the cool end is opposite. |
+
+## Duotone (`duotone`)
+
+Replaces the image's color with two tints, one for the shadows and one for the highlights,
+blending across three stops either side of the pivot, as in a duotone print. Luminance is kept,
+so the result is the black and white image, tinted.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `shadows-hue` | 220 | 0 to 360 | The shadows' tint, in degrees. |
+| `highlights-hue` | 40 | 0 to 360 | The highlights' tint. |
+| `saturation` | 0.4 | 0 to 1 | How colored both tints are; 0 gives black and white. |
+| `pivot` | 0.18 | 0.001 to 10 | Where the two tints meet. |
+
 ## LUT (`lut`)
 
 Applies a `.cube` LUT file, 1D or 3D, like the ones other grading tools export. 3D tables use
@@ -266,6 +337,18 @@ Fill Light inside a round spot only, as Spot Exposure places it.
 | `amount`, `pivot`, `tint-hue`, `tint-amount` | 0.75, 0.18, 40, 0 | | As for Fill Light. |
 | `center-x`, `center-y`, `size`, `softness` | 0, 0, 0.3, 0.3 | | As for Spot Exposure. |
 
+## Color Filter (`color-filter`)
+
+A colored glass filter on the lens, such as an 85 (amber) or 80A (blue). It passes its own hue
+and holds back the opposite one, by up to twice Density stops. With Preserve Brightness on,
+greys keep their brightness, as the camera's exposure would make up for the filter's loss.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `hue` | 30 | 0 to 360 | The filter's color, in degrees. |
+| `density` | 0.3 | 0 to 2 | How strong the filter is: the opposite hue loses twice this many stops. |
+| `preserve` | 1 | 0 or 1 | Preserve Brightness: 1 keeps grey's brightness; 0 lets the filter darken the image. |
+
 ## Lens Vignette (`lens-vignette`)
 
 Darkens the frame toward its edges, the way a lens loses light away from its center, or
@@ -309,6 +392,21 @@ resolution and render scale.
 | `amount` | 0.5 | 0 to 1 | How much of the blurred copy is mixed in. |
 | `size` | 1 | 0.05 to 10 | Blur size, in percent of the frame's width. |
 | `highlights` | 0.5 | 0 to 1 | At 0 every tone spreads alike; at 1 mostly highlights spread. |
+
+## Local Contrast (`local-contrast`)
+
+Raises contrast between each pixel and its surroundings while leaving broad brightness alone,
+so texture and detail stand out without the image's overall tones changing; below zero it
+softens them instead. Each pixel's luminance is compared with a blur of it, and the pixel is
+scaled by their ratio to the power of Amount, held within two stops either way. A small floor at
+the pivot over 64 keeps noise in the blacks from being amplified. Size is the blur's, a
+fraction of the frame's width: small sizes bring out fine texture, large ones shape the
+light across whole areas.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 0.3 | -1 to 1 | How much local contrast is added (or, below 0, taken away). |
+| `size` | 1.5 | 0.1 to 10 | The size of the surroundings, in percent of the frame's width. |
 
 ## Telecine Net (`telecine-net`)
 
