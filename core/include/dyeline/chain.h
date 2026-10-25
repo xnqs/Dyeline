@@ -33,9 +33,13 @@ struct CompiledChain {
 bool compile_chain(const Look& look, double strength, CompiledChain& out, std::string& error,
                    const std::string& base_dir = {});
 
-// Runs a compiled chain on one row of interleaved float pixels on the CPU, with the same kernel
-// code the GPU backends use. `channels` is 1 (alpha only), 3 or 4. `src` and `dst` may be the
-// same row.
+// Runs a compiled chain over the window `args` describes, on the CPU, with the same kernel
+// code the GPU backends use. `src` and `dst` may be the same buffer.
+void render_chain_window(const float* src, float* dst, const dl_image_args& args,
+                         const CompiledChain& chain);
+
+// Runs a compiled chain on one row of interleaved float pixels. `channels` is 1 (alpha only),
+// 3 or 4. The row is treated as the whole frame, one canonical pixel per pixel, at seed 0.
 void render_chain_row(const float* src, float* dst, std::size_t pixel_count, int channels,
                       bool premultiplied, const CompiledChain& chain);
 

@@ -215,6 +215,37 @@ bool prepare_lut(PrepareContext& context, dl_op& op, std::string& problem) {
     return true;
 }
 
+// Lens Vignette: Amount in stops, reached Softness past Size (distances are 1 at the corners).
+void encode_lens_vignette(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_LENS_VIGNETTE;
+    for (int i = 0; i < 6; ++i) {
+        op.p[i] = static_cast<float>(v[static_cast<std::size_t>(i)]);
+    }
+}
+
+bool lens_vignette_is_identity(const ParamValues& v) {
+    return v[0] == 0.0;
+}
+
+// Grain: at Amount 1 the midtones move by up to half a stop either way.
+constexpr double kGrainMaxStops = 0.5;
+
+void encode_grain(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_GRAIN;
+    op.p[0] = static_cast<float>(v[0] * kGrainMaxStops);
+    op.p[1] = static_cast<float>(1.0 / v[1]);
+    op.p[2] = static_cast<float>(v[2]);
+    op.p[3] = v[3] >= 0.5 ? 1.0f : 0.0f;
+    op.p[4] = static_cast<float>(std::floor(v[4]));
+    for (int k = 0; k < 3; ++k) {
+        op.p[5 + k] = static_cast<float>(kLumaWeights[k]);
+    }
+}
+
+bool grain_is_identity(const ParamValues& v) {
+    return v[0] == 0.0;
+}
+
 std::vector<ToolSpec> make_tools() {
     std::vector<ToolSpec> tools;
     tools.push_back({"exposure", "Exposure", ToolCategory::Matte, 1,
@@ -270,6 +301,21 @@ std::vector<ToolSpec> make_tools() {
     tools.push_back({"lut", "LUT", ToolCategory::Matte, 1,
                      {{"gamma", "LUT Gamma", 1.0, 0.2, 5.0}},
                      nullptr, encode_unused, never_identity, prepare_lut});
+    tools.push_back({"lens-vignette", "Lens Vignette", ToolCategory::Lens, 1,
+                     {{"amount", "Amount", -1.0, -4.0, 4.0},
+                      {"size", "Size", 0.5, 0.0, 2.0},
+                      {"softness", "Softness", 0.6, 0.01, 2.0},
+                      {"roundness", "Roundness", 1.0, 0.0, 1.0},
+                      {"center-x", "Center X", 0.0, -1.0, 1.0},
+                      {"center-y", "Center Y", 0.0, -1.0, 1.0}},
+                     nullptr, encode_lens_vignette, lens_vignette_is_identity, nullptr});
+    tools.push_back({"grain", "Grain", ToolCategory::Camera, 1,
+                     {{"amount", "Amount", 0.3, 0.0, 1.0},
+                      {"size", "Size", 1.5, 0.5, 8.0},
+                      {"color", "Color", 0.3, 0.0, 1.0},
+                      {"animate", "Animate", 1.0, 0.0, 1.0},
+                      {"seed", "Seed", 0.0, 0.0, 9999.0}},
+                     nullptr, encode_grain, grain_is_identity, nullptr});
     return tools;
 }
 

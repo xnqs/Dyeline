@@ -26,7 +26,7 @@ TEST(CudaBackend, MatchesCpuReference) {
     const std::vector<float> src = dyeline::test::make_frame(width, height);
     const dl_image_args args = dyeline::test::window_args(width, height);
     const dyeline::CompiledChain chain = dyeline::test::test_chain();
-    ASSERT_EQ(chain.pass.count, 11);  // all 11 tools, so the LUT loaded
+    ASSERT_EQ(chain.pass.count, 13);  // all 13 tools, so the LUT loaded
     const std::vector<float> expected = dyeline::test::cpu_reference(src, args, chain);
 
     const std::size_t bytes = src.size() * sizeof(float);

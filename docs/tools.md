@@ -126,3 +126,34 @@ If the file can't be read, the LUT is bypassed and the plugin shows a warning sa
 Files with both a 1D and a 3D table, and 3D tables over 129 points, aren't supported yet. Like a
 look file, a LUT changed on disk is picked up on the next render; EffectCraft needs Reload Look
 File bumped to render again.
+
+## Lens Vignette (`lens-vignette`)
+
+Darkens the frame toward its edges, the way a lens loses light away from its center, or
+brightens them with a positive Amount. The change is in stops, so it dims highlights and
+shadows alike. Distances are measured so the frame's corners are at 1, whatever its shape and
+render scale.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | -1 | -4 to 4 | Stops at the edge of the falloff. Negative darkens. |
+| `size` | 0.5 | 0 to 2 | Distance from the center where the falloff begins (1 is a corner). |
+| `softness` | 0.6 | 0.01 to 2 | How far past Size the falloff reaches its full Amount. |
+| `roundness` | 1 | 0 to 1 | 1 is a circle; 0 is an ellipse that follows the frame's shape. |
+| `center-x` | 0 | -1 to 1 | Moves the center, as a fraction of half the frame's width. |
+| `center-y` | 0 | -1 to 1 | Moves the center, as a fraction of half the frame's height (up is positive). |
+
+## Grain (`grain`)
+
+Film-like grain. Each pixel moves by a small random amount in stops, strongest in the midtones
+and fading toward deep shadows and bright highlights, without shifting the image's overall
+brightness. Grain is sized in full-resolution pixels, so it looks the same at any render scale,
+and it changes every frame unless Animate is off.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 0.3 | 0 to 1 | Strength. At 1, midtones move by up to about a stop either way. |
+| `size` | 1.5 | 0.5 to 8 | Grain size, in full-resolution pixels. |
+| `color` | 0.3 | 0 to 1 | 0 is the same grain in every channel; 1 is separate grain per channel. |
+| `animate` | 1 | 0 or 1 | 1 changes the grain every frame; 0 keeps it still. |
+| `seed` | 0 | 0 to 9999 | Picks a different grain pattern. |

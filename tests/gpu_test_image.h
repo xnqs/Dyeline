@@ -32,7 +32,7 @@ inline std::vector<float> make_frame(int width, int height) {
 }
 
 // Args for a window that skips the frame's first column and row, so the tests also check
-// the window offsets.
+// the window offsets and the window's place in the frame.
 inline dl_image_args window_args(int width, int height) {
     dl_image_args args{};
     args.width = width - 1;
@@ -45,6 +45,15 @@ inline dl_image_args window_args(int width, int height) {
     args.src_y0 = 1;
     args.dst_x0 = 1;
     args.dst_y0 = 1;
+    // The frame is the whole test image at half render scale with 2:1 pixels, so canonical
+    // positions differ from pixel ones.
+    args.frame_x0 = 1;
+    args.frame_y0 = 1;
+    args.canonical_x = 4.0f;
+    args.canonical_y = 2.0f;
+    args.frame_right = 4.0f * static_cast<float>(width);
+    args.frame_top = 2.0f * static_cast<float>(height);
+    args.seed = 7;
     return args;
 }
 
@@ -78,6 +87,9 @@ inline CompiledChain test_chain() {
                            {"midtones-hue", 30.0}, {"midtones-amount", 0.3},
                            {"highlights-hue", 60.0}, {"highlights-amount", 0.5}});
     add("lut", 0.9, {{"file", lut.path()}, {"gamma", 2.0}});
+    add("lens-vignette", 0.9, {{"amount", -1.5}, {"size", 0.2}, {"softness", 0.7},
+                               {"roundness", 0.4}, {"center-x", 0.1}, {"center-y", -0.2}});
+    add("grain", 1.0, {{"amount", 0.8}, {"size", 3.0}, {"color", 0.6}, {"seed", 12}});
     add("exposure", 0.5, {{"stops", -2.0}});
     CompiledChain chain;
     std::string error;

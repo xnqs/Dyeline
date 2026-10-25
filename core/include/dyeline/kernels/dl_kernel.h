@@ -21,6 +21,8 @@ typedef float4 dl_float4;
 #define dl_exp2(x) exp2f(x)
 #define dl_log2(x) log2f(x)
 #define dl_fabs(x) fabsf(x)
+#define dl_sqrt(x) sqrtf(x)
+#define dl_floor(x) floorf(x)
 
 #elif defined(__METAL_VERSION__)
 
@@ -35,6 +37,8 @@ typedef float4 dl_float4;
 #define dl_exp2(x) metal::exp2(x)
 #define dl_log2(x) metal::log2(x)
 #define dl_fabs(x) metal::fabs(x)
+#define dl_sqrt(x) metal::sqrt(x)
+#define dl_floor(x) metal::floor(x)
 
 #elif defined(__OPENCL_VERSION__)
 
@@ -48,6 +52,8 @@ typedef float4 dl_float4;
 #define dl_exp2(x) exp2(x)
 #define dl_log2(x) log2(x)
 #define dl_fabs(x) fabs(x)
+#define dl_sqrt(x) sqrt(x)
+#define dl_floor(x) floor(x)
 
 #else  // C++ (CPU)
 
@@ -67,7 +73,30 @@ inline float dl_pow(float x, float y) { return std::pow(x, y); }
 inline float dl_exp2(float x) { return std::exp2(x); }
 inline float dl_log2(float x) { return std::log2(x); }
 inline float dl_fabs(float x) { return std::fabs(x); }
+inline float dl_sqrt(float x) { return std::sqrt(x); }
+inline float dl_floor(float x) { return std::floor(x); }
 
 #endif
+
+// Shared by several tools.
+
+DL_DEVICE float dl_smoothstep(float edge0, float edge1, float x) {
+    float t = (x - edge0) / (edge1 - edge0);
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+// Where a pixel is, for tools that depend on position (Lens Vignette, Grain). Positions are in
+// the host's canonical coordinates: full-resolution pixels, made square by the pixel aspect
+// ratio, with y up. So a look renders the same at any render scale.
+struct dl_place {
+    float x;  // the pixel's center
+    float y;
+    float frame_left;  // the frame's edges
+    float frame_bottom;
+    float frame_right;
+    float frame_top;
+    int seed;  // differs from frame to frame, for grain
+};
 
 #endif  // DYELINE_KERNELS_DL_KERNEL_H

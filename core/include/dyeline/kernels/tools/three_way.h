@@ -11,7 +11,6 @@
 #define DYELINE_KERNELS_TOOLS_THREE_WAY_H
 
 #include "../dl_kernel.h"
-#include "shadows_highlights.h"
 
 // p[0..2]: the shadows' stops per channel; p[3..5]: the midtones'; p[6..8]: the highlights';
 // p[9]: the pivot, in scene-linear; p[10]: the fade width W, in stops;

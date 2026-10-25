@@ -11,12 +11,6 @@
 
 #include "../dl_kernel.h"
 
-DL_DEVICE float dl_smoothstep(float edge0, float edge1, float x) {
-    float t = (x - edge0) / (edge1 - edge0);
-    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
-    return t * t * (3.0f - 2.0f * t);
-}
-
 // p[0]: shadows, in stops; p[1]: highlights, in stops; p[2]: the pivot, in scene-linear;
 // p[3]: the fade width W, in stops; p[4..6]: the luminance weights.
 DL_DEVICE dl_float4 dl_tool_shadows_highlights(dl_float4 c, DL_CONSTANT const float* p) {

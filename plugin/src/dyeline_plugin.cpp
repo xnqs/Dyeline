@@ -7,6 +7,7 @@
 // OFX and the render core in core/.
 
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -109,16 +110,12 @@ private:
 
 class ChainProcessor : public OFX::ImageProcessor {
 public:
-    ChainProcessor(OFX::ImageEffect& effect, const OFX::Image& src, int channels,
-                   bool premultiplied, const dyeline::CompiledChain& chain)
-        : OFX::ImageProcessor(effect),
-          src_(src),
-          channels_(channels),
-          premultiplied_(premultiplied),
-          chain_(chain) {}
+    // `frame` carries the render's place in the frame (see DyelineEffect::frame_args).
+    ChainProcessor(OFX::ImageEffect& effect, const OFX::Image& src, const dl_image_args& frame,
+                   const dyeline::CompiledChain& chain)
+        : OFX::ImageProcessor(effect), src_(src), frame_(frame), chain_(chain) {}
 
     void multiThreadProcessImages(OfxRectI window) override {
-        const auto width = static_cast<std::size_t>(window.x2 - window.x1);
         for (int y = window.y1; y < window.y2; ++y) {
             if (_effect.abort()) {
                 break;
@@ -128,14 +125,19 @@ public:
             if (dst == nullptr || src == nullptr) {
                 continue;
             }
-            dyeline::render_chain_row(src, dst, width, channels_, premultiplied_, chain_);
+            // One row at a time, addressed from its first pixel.
+            dl_image_args row = frame_;
+            row.width = window.x2 - window.x1;
+            row.height = 1;
+            row.frame_x0 = window.x1;
+            row.frame_y0 = y;
+            dyeline::render_chain_window(src, dst, row, chain_);
         }
     }
 
 private:
     const OFX::Image& src_;
-    int channels_;
-    bool premultiplied_;
+    dl_image_args frame_;
     const dyeline::CompiledChain& chain_;
 };
 
@@ -196,12 +198,15 @@ public:
         const bool premultiplied = src->getPreMultiplication() == OFX::eImagePreMultiplied;
 
         const dyeline::CompiledChain chain = chain_at(args.time, /*report=*/true);
+        dl_image_args frame = frame_args(args, *src);
+        frame.channels = channels;
+        frame.premultiplied = premultiplied ? 1 : 0;
         if (args.isEnabledCudaRender || args.isEnabledMetalRender || args.isEnabledOpenCLRender) {
-            render_gpu(args, *src, *dst, channels, premultiplied, chain);
+            render_gpu(args, *src, *dst, frame, chain);
             return;
         }
 
-        ChainProcessor processor(*this, *src, channels, premultiplied, chain);
+        ChainProcessor processor(*this, *src, frame, chain);
         processor.setDstImg(dst.get());
         processor.setRenderWindow(args.renderWindow);
         processor.process();
@@ -337,17 +342,35 @@ private:
 
     // On a GPU render the images' pixel data are device buffers on the host's GPU: CUDA
     // device pointers, MTLBuffers for Metal, or cl_mem buffers for OpenCL.
+    // Where this render sits in the frame, for tools that depend on position: the project's
+    // extent is the frame, positions are in canonical coordinates, and the seed follows the
+    // frame number. Buffer layout is filled in by the caller.
+    dl_image_args frame_args(const OFX::RenderArguments& args, const OFX::Image& src) {
+        dl_image_args frame{};
+        frame.width = args.renderWindow.x2 - args.renderWindow.x1;
+        frame.height = args.renderWindow.y2 - args.renderWindow.y1;
+        frame.frame_x0 = args.renderWindow.x1;
+        frame.frame_y0 = args.renderWindow.y1;
+        const double aspect = src.getPixelAspectRatio() > 0.0 ? src.getPixelAspectRatio() : 1.0;
+        frame.canonical_x = static_cast<float>(aspect / args.renderScale.x);
+        frame.canonical_y = static_cast<float>(1.0 / args.renderScale.y);
+        const OfxPointD offset = getProjectOffset();
+        const OfxPointD size = getProjectSize();
+        frame.frame_left = static_cast<float>(offset.x);
+        frame.frame_bottom = static_cast<float>(offset.y);
+        frame.frame_right = static_cast<float>(offset.x + size.x);
+        frame.frame_top = static_cast<float>(offset.y + size.y);
+        frame.seed = static_cast<int>(std::floor(args.time + 0.5));
+        return frame;
+    }
+
     void render_gpu(const OFX::RenderArguments& args, const OFX::Image& src, OFX::Image& dst,
-                    int channels, bool premultiplied, const dyeline::CompiledChain& chain) {
+                    const dl_image_args& frame, const dyeline::CompiledChain& chain) {
         const OfxRectI& window = args.renderWindow;
         const OfxRectI& src_bounds = src.getBounds();
         const OfxRectI& dst_bounds = dst.getBounds();
 
-        dl_image_args image{};
-        image.width = window.x2 - window.x1;
-        image.height = window.y2 - window.y1;
-        image.channels = channels;
-        image.premultiplied = premultiplied ? 1 : 0;
+        dl_image_args image = frame;
         image.src_row_floats = src.getRowBytes() / static_cast<int>(sizeof(float));
         image.dst_row_floats = dst.getRowBytes() / static_cast<int>(sizeof(float));
         image.src_x0 = window.x1 - src_bounds.x1;
