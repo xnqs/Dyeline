@@ -50,6 +50,8 @@ Dyeline targets OFX hosts on Windows, macOS and Linux. First targets:
 - Natron
 - EffectCraft (OpenFX fork)
 
+New to Dyeline? Start with the [user guide](docs/user-guide.md).
+
 ## Installing
 
 Each release on GitHub has an installer for Windows (`-setup.exe`), a package for macOS

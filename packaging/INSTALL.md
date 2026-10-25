@@ -2,7 +2,8 @@
 
 Dyeline is one OFX plugin bundle, `Dyeline.ofx.bundle`, with the Look Designer and the
 bundled looks inside it. Install it into your OFX plugin folder and restart your host
-(DaVinci Resolve, Natron, Nuke, ...). It appears as **Dyeline** in the effects list.
+(DaVinci Resolve, Natron, Nuke, ...). It appears as **Dyeline** in the effects list. The
+[user guide](https://github.com/xnqs/Dyeline/blob/main/docs/user-guide.md) explains how to use it.
 
 ## Windows
 
