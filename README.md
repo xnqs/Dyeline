@@ -124,7 +124,7 @@ The bundle ships `dyeline-designer` next to the plugin binary: a window for edit
   software and cameras that can't run Dyeline. The LUT takes values in the look's input space
   and gives values in its output space, so set the input to the footage's log space: a
   scene-linear input clips above 1. Tools that depend on where a pixel is, or on its
-  neighbors (Lens Vignette, Grain, Diffusion Filter, Halation), can't be held by a LUT and are
+  neighbors (Lens Vignette, Grain, Diffusion Filter, Telecine Net, Halation), can't be held by a LUT and are
   left out; the dialog lists them and the file's comments name them.
 - Ctrl+Z and Ctrl+Shift+Z (Cmd on macOS) undo and redo.
 
