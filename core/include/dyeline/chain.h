@@ -16,20 +16,27 @@ struct CompiledChain {
     // Tools in the look this build can't run (unknown, or saved by a newer Dyeline). They
     // are bypassed, and the plugin reports them.
     std::vector<std::string> missing_tools;
+    // Tools left out because something they need couldn't be loaded, such as a LUT file,
+    // each with the reason. The plugin reports them.
+    std::vector<std::string> problems;
+    // Data the pass reads besides its ops, such as LUT tables (see chain_kernel.h).
+    std::vector<float> table;
 
     // True when rendering would leave every pixel unchanged.
     bool is_identity() const { return pass.count == 0 || pass.strength == 0.0f; }
 };
 
 // Compiles `look` with an overall `strength` (0 to 1). Disabled tools and tools whose settings
-// change nothing are left out. Fails, with `error` set, when more than DL_MAX_OPS tools are
-// active.
-bool compile_chain(const Look& look, double strength, CompiledChain& out, std::string& error);
+// change nothing are left out. Relative file paths in the look, such as a LUT's, are resolved
+// against `base_dir` when it is set. Fails, with `error` set, when more than DL_MAX_OPS tools
+// are active.
+bool compile_chain(const Look& look, double strength, CompiledChain& out, std::string& error,
+                   const std::string& base_dir = {});
 
 // Runs a compiled chain on one row of interleaved float pixels on the CPU, with the same kernel
 // code the GPU backends use. `channels` is 1 (alpha only), 3 or 4. `src` and `dst` may be the
 // same row.
 void render_chain_row(const float* src, float* dst, std::size_t pixel_count, int channels,
-                      bool premultiplied, const dl_chain& chain);
+                      bool premultiplied, const CompiledChain& chain);
 
 }  // namespace dyeline

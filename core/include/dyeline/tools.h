@@ -29,6 +29,17 @@ struct ParamSpec {
 // A tool's parameter values, already migrated, defaulted and clamped, in ParamSpec order.
 using ParamValues = std::vector<double>;
 
+// What a tool that reads files gets when its op is built (see ToolSpec::prepare).
+struct PrepareContext {
+    // The entry's raw params, for values that aren't numbers, such as a file path.
+    const nlohmann::json& params;
+    const ParamValues& values;
+    // The folder relative paths are resolved against: the look file's, or empty.
+    const std::string& base_dir;
+    // The chain's table data. A tool appends what it needs and records the offset in its op.
+    std::vector<float>& table;
+};
+
 struct ToolSpec {
     const char* id;
     const char* label;
@@ -42,6 +53,10 @@ struct ToolSpec {
     void (*encode)(const ParamValues& values, dl_op& op);
     // True when the tool would leave every pixel unchanged at these values.
     bool (*is_identity)(const ParamValues& values);
+    // For tools that read files or need table data: used instead of `encode` when set.
+    // Returns false to leave the tool out of the pass, with `problem` saying why when the
+    // user should hear about it (a missing file, say), or empty when there is nothing to do.
+    bool (*prepare)(PrepareContext& context, dl_op& op, std::string& problem);
 };
 
 // All registered tools, in tools-drawer order.

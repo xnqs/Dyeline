@@ -21,6 +21,7 @@
 #include "dyeline/designer_link.h"
 #include "dyeline/gpu.h"
 #include "dyeline/look.h"
+#include "dyeline/paths.h"
 #include "module_path.h"
 #include "ofxsImageEffect.h"
 #include "ofxsMultiThread.h"
@@ -46,25 +47,13 @@ constexpr const char* kParamLook = "look";
 constexpr const char* kParamLookRevision = "lookRevision";
 constexpr const char* kParamDesignerStatus = "designerStatus";
 
-// Expands a leading "~" to the home folder, since a path typed into a host's text field
-// doesn't go through a shell.
-std::string expand_home(const std::string& path) {
-    if (path.empty() || path[0] != '~' || (path.size() > 1 && path[1] != '/' && path[1] != '\\')) {
-        return path;
-    }
-#ifdef _WIN32
-    const char* home = std::getenv("USERPROFILE");
-#else
-    const char* home = std::getenv("HOME");
-#endif
-    return home != nullptr && home[0] != '\0' ? std::string(home) + path.substr(1) : path;
-}
-
 // A parsed look, or why it couldn't be read.
 struct LoadedLook {
     bool ok = true;
     std::string error;
     dyeline::Look look;
+    // The folder a LUT path in the look is relative to: the look file's, or empty.
+    std::string base_dir;
 };
 
 // The last look parsed from the hidden parameter and from a look file, so a render only
@@ -121,7 +110,7 @@ private:
 class ChainProcessor : public OFX::ImageProcessor {
 public:
     ChainProcessor(OFX::ImageEffect& effect, const OFX::Image& src, int channels,
-                   bool premultiplied, const dl_chain& chain)
+                   bool premultiplied, const dyeline::CompiledChain& chain)
         : OFX::ImageProcessor(effect),
           src_(src),
           channels_(channels),
@@ -147,7 +136,7 @@ private:
     const OFX::Image& src_;
     int channels_;
     bool premultiplied_;
-    const dl_chain& chain_;
+    const dyeline::CompiledChain& chain_;
 };
 
 int channel_count(OFX::PixelComponentEnum components) {
@@ -208,11 +197,11 @@ public:
 
         const dyeline::CompiledChain chain = chain_at(args.time, /*report=*/true);
         if (args.isEnabledCudaRender || args.isEnabledMetalRender || args.isEnabledOpenCLRender) {
-            render_gpu(args, *src, *dst, channels, premultiplied, chain.pass);
+            render_gpu(args, *src, *dst, channels, premultiplied, chain);
             return;
         }
 
-        ChainProcessor processor(*this, *src, channels, premultiplied, chain.pass);
+        ChainProcessor processor(*this, *src, channels, premultiplied, chain);
         processor.setDstImg(dst.get());
         processor.setRenderWindow(args.renderWindow);
         processor.process();
@@ -240,7 +229,10 @@ private:
         std::string file;
         look_file_->getValueAtTime(time, file);
         if (!file.empty()) {
-            return cache_.from_file(expand_home(file));
+            const std::string path = dyeline::expand_home(file);
+            LoadedLook loaded = cache_.from_file(path);
+            loaded.base_dir = std::filesystem::u8path(path).parent_path().u8string();
+            return loaded;
         }
         std::string text;
         look_->getValueAtTime(time, text);
@@ -255,7 +247,8 @@ private:
         dyeline::CompiledChain chain;
         std::string error = loaded.error;
         if (loaded.ok) {
-            dyeline::compile_chain(loaded.look, strength_->getValueAtTime(time), chain, error);
+            dyeline::compile_chain(loaded.look, strength_->getValueAtTime(time), chain, error,
+                                   loaded.base_dir);
         }
         if (!error.empty()) {
             if (report) {
@@ -268,6 +261,9 @@ private:
                 show_message(OFX::Message::eMessageWarning,
                              "Dyeline: this look uses tools this version doesn't have, so they "
                              "are bypassed: " + join(chain.missing_tools));
+            } else if (!chain.problems.empty()) {
+                show_message(OFX::Message::eMessageWarning,
+                             "Dyeline: some tools are bypassed. " + join(chain.problems));
             } else {
                 show_message(OFX::Message::eMessageMessage, "");
             }
@@ -301,7 +297,7 @@ private:
         look_->getValueAtTime(time, text);
         std::vector<std::string> args;
         if (!file.empty()) {
-            args = {"--file", expand_home(file)};
+            args = {"--file", dyeline::expand_home(file)};
         }
         const dyeline::designer::RoundTrip trip =
             dyeline::designer::run(dyeline::plugin::designer_path(),
@@ -342,7 +338,7 @@ private:
     // On a GPU render the images' pixel data are device buffers on the host's GPU: CUDA
     // device pointers, MTLBuffers for Metal, or cl_mem buffers for OpenCL.
     void render_gpu(const OFX::RenderArguments& args, const OFX::Image& src, OFX::Image& dst,
-                    int channels, bool premultiplied, const dl_chain& chain) {
+                    int channels, bool premultiplied, const dyeline::CompiledChain& chain) {
         const OfxRectI& window = args.renderWindow;
         const OfxRectI& src_bounds = src.getBounds();
         const OfxRectI& dst_bounds = dst.getBounds();
@@ -363,13 +359,16 @@ private:
         if (args.isEnabledCudaRender) {
             error = dyeline::cuda::render_chain(args.pCudaStream,
                                                 static_cast<const float*>(src.getPixelData()),
-                                                static_cast<float*>(dst.getPixelData()), image, chain);
+                                                static_cast<float*>(dst.getPixelData()), image,
+                                                chain.pass, chain.table.data(), chain.table.size());
         } else if (args.isEnabledOpenCLRender) {
             error = dyeline::opencl::render_chain(args.pOpenCLCmdQ, src.getPixelData(),
-                                                  dst.getPixelData(), image, chain);
+                                                  dst.getPixelData(), image, chain.pass,
+                                                  chain.table.data(), chain.table.size());
         } else {
             error = dyeline::metal::render_chain(args.pMetalCmdQ, src.getPixelData(),
-                                                 dst.getPixelData(), image, chain);
+                                                 dst.getPixelData(), image, chain.pass,
+                                                 chain.table.data(), chain.table.size());
         }
         if (!error.empty()) {
             show_message(OFX::Message::eMessageError, "Dyeline: " + error);

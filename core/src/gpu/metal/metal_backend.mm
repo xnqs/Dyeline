@@ -66,7 +66,8 @@ bool available() {
 }
 
 std::string render_chain(void* command_queue, const void* src_buffer, void* dst_buffer,
-                         const dl_image_args& args, const dl_chain& chain, bool wait) {
+                         const dl_image_args& args, const dl_chain& chain, const float* table,
+                         std::size_t table_floats, bool wait) {
     if (args.width <= 0 || args.height <= 0) {
         return {};
     }
@@ -90,6 +91,21 @@ std::string render_chain(void* command_queue, const void* src_buffer, void* dst_
         [encoder setBuffer:dst offset:0 atIndex:1];
         [encoder setBytes:&args length:sizeof(args) atIndex:2];
         [encoder setBytes:&chain length:sizeof(chain) atIndex:3];  // under setBytes' 4 KB limit
+        if (table_floats > 0) {
+            // A copy the command buffer keeps alive until the work is done.
+            id<MTLBuffer> table_buffer =
+                [queue.device newBufferWithBytes:table
+                                          length:table_floats * sizeof(float)
+                                         options:MTLResourceStorageModeShared];
+            if (table_buffer == nil) {
+                [encoder endEncoding];
+                return "Could not upload the look's tables to Metal";
+            }
+            [encoder setBuffer:table_buffer offset:0 atIndex:4];
+        } else {
+            const float unused = 0.0f;
+            [encoder setBytes:&unused length:sizeof(unused) atIndex:4];
+        }
 
         const NSUInteger tw = pipelines.chain.threadExecutionWidth;
         const NSUInteger th = pipelines.chain.maxTotalThreadsPerThreadgroup / tw;

@@ -33,7 +33,7 @@ CompiledChain compile(const Look& look, double strength = 1.0) {
 // Runs a chain on one straight-alpha RGBA pixel.
 std::vector<float> run(const CompiledChain& chain, std::vector<float> px) {
     std::vector<float> out(4);
-    dyeline::render_chain_row(px.data(), out.data(), 1, 4, false, chain.pass);
+    dyeline::render_chain_row(px.data(), out.data(), 1, 4, false, chain);
     return out;
 }
 
@@ -140,13 +140,13 @@ TEST(ChainPass, PremultipliedPixelsAreGradedAsStraightColor) {
     const CompiledChain chain = compile(look);
     const std::vector<float> premultiplied = {0.25f, 0.125f, 0.0f, 0.5f};
     std::vector<float> out(4);
-    dyeline::render_chain_row(premultiplied.data(), out.data(), 1, 4, true, chain.pass);
+    dyeline::render_chain_row(premultiplied.data(), out.data(), 1, 4, true, chain);
     EXPECT_FLOAT_EQ(out[0], 0.5f);
     EXPECT_FLOAT_EQ(out[1], 0.25f);
     EXPECT_FLOAT_EQ(out[3], 0.5f);
     // Fully transparent pixels stay as they are.
     const std::vector<float> clear = {0.0f, 0.0f, 0.0f, 0.0f};
-    dyeline::render_chain_row(clear.data(), out.data(), 1, 4, true, chain.pass);
+    dyeline::render_chain_row(clear.data(), out.data(), 1, 4, true, chain);
     EXPECT_FLOAT_EQ(out[0], 0.0f);
 }
 
@@ -156,11 +156,11 @@ TEST(ChainPass, HandlesRgbAndAlphaOnlyRows) {
     const CompiledChain chain = compile(look);
     const std::vector<float> rgb = {0.1f, 0.2f, 0.3f, 1.0f, 2.0f, 3.0f};
     std::vector<float> out(6);
-    dyeline::render_chain_row(rgb.data(), out.data(), 2, 3, false, chain.pass);
+    dyeline::render_chain_row(rgb.data(), out.data(), 2, 3, false, chain);
     EXPECT_FLOAT_EQ(out[5], 6.0f);
     const std::vector<float> alpha = {0.3f, 0.7f};
     std::vector<float> alpha_out(2);
-    dyeline::render_chain_row(alpha.data(), alpha_out.data(), 2, 1, false, chain.pass);
+    dyeline::render_chain_row(alpha.data(), alpha_out.data(), 2, 1, false, chain);
     EXPECT_FLOAT_EQ(alpha_out[1], 0.7f);
 }
 
@@ -168,7 +168,7 @@ TEST(ChainPass, WorksInPlace) {
     Look look;
     look.chain = {exposure(-1.0)};
     std::vector<float> px = {1.0f, 2.0f, 4.0f, 1.0f};
-    dyeline::render_chain_row(px.data(), px.data(), 1, 4, false, compile(look).pass);
+    dyeline::render_chain_row(px.data(), px.data(), 1, 4, false, compile(look));
     EXPECT_FLOAT_EQ(px[2], 2.0f);
 }
 

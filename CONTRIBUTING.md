@@ -57,8 +57,10 @@ CMake assembles from every header in `kernels/tools/`.
 3. Register it in `core/src/tools.cpp`: its id (saved in looks, so it never changes), label,
    category, version, parameters with defaults and ranges, an `encode` that turns parameter
    values into the op's floats (work out anything that is constant per frame here, not per
-   pixel), and an `is_identity` check.
-4. Pin its math in `tests/chain_test.cpp`. When you later change its parameters, raise its
+   pixel), and an `is_identity` check. A tool that reads a file or needs more data than its
+   op's floats, like LUT, sets `prepare` instead: it appends its data to the chain's table and
+   stores the offset in its op, and the kernel reads it from the `table` argument.
+4. Pin its math in `tests/tools_test.cpp`. When you later change its parameters, raise its
    version and add a `migrate` step so older looks still load.
 
 ## Style

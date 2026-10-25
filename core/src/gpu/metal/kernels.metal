@@ -9,10 +9,11 @@ kernel void dl_chain_kernel(device const float* src [[buffer(0)]],
                             device float* dst [[buffer(1)]],
                             constant dl_image_args& args [[buffer(2)]],
                             constant dl_chain& chain [[buffer(3)]],
+                            device const float* table [[buffer(4)]],
                             uint2 gid [[thread_position_in_grid]]) {
     const int x = int(gid.x);
     const int y = int(gid.y);
     if (x < args.width && y < args.height) {
-        dl_chain_at(src, dst, x, y, args, &chain);
+        dl_chain_at(src, dst, x, y, args, &chain, table);
     }
 }

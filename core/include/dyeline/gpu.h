@@ -3,8 +3,11 @@
 // GPU launchers for the render core. Each one runs a look's fused per-pixel pass, recording
 // work on a queue the host owns and returning without waiting, unless `wait` is set (tests use
 // it). Handles are passed as void* so this header stays free of CUDA, Metal and OpenCL types.
-// Each returns an empty string on success, else the error.
+// `table` is the chain's table data in host memory (CompiledChain::table), `table_floats`
+// floats long; each launcher copies it to the GPU for the render. Each returns an empty string
+// on success, else the error.
 
+#include <cstddef>
 #include <string>
 
 #include "dyeline/kernels/chain_kernel.h"
@@ -18,7 +21,8 @@ bool available();
 
 // Runs the chain on device buffers. `stream` is a cudaStream_t (null means the default stream).
 std::string render_chain(void* stream, const float* src, float* dst, const dl_image_args& args,
-                         const dl_chain& chain, bool wait = false);
+                         const dl_chain& chain, const float* table, std::size_t table_floats,
+                         bool wait = false);
 
 }  // namespace cuda
 
@@ -29,7 +33,8 @@ bool available();
 
 // Runs the chain on MTLBuffers using the host's MTLCommandQueue.
 std::string render_chain(void* command_queue, const void* src_buffer, void* dst_buffer,
-                         const dl_image_args& args, const dl_chain& chain, bool wait = false);
+                         const dl_image_args& args, const dl_chain& chain, const float* table,
+                         std::size_t table_floats, bool wait = false);
 
 }  // namespace metal
 
@@ -41,7 +46,8 @@ bool available();
 
 // Runs the chain on cl_mem buffers using the host's cl_command_queue.
 std::string render_chain(void* command_queue, const void* src_buffer, void* dst_buffer,
-                         const dl_image_args& args, const dl_chain& chain, bool wait = false);
+                         const dl_image_args& args, const dl_chain& chain, const float* table,
+                         std::size_t table_floats, bool wait = false);
 
 }  // namespace opencl
 

@@ -1,7 +1,9 @@
 add_library(dyeline_core STATIC
     src/chain.cpp
+    src/cube.cpp
     src/designer_link.cpp
     src/look.cpp
+    src/paths.cpp
     src/tools.cpp
 )
 add_library(Dyeline::core ALIAS dyeline_core)

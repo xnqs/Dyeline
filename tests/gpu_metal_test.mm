@@ -28,7 +28,8 @@ TEST(MetalBackend, MatchesCpuReference) {
     const int height = 23;
     const std::vector<float> src = dyeline::test::make_frame(width, height);
     const dl_image_args args = dyeline::test::window_args(width, height);
-    const dl_chain chain = dyeline::test::test_chain();
+    const dyeline::CompiledChain chain = dyeline::test::test_chain();
+    ASSERT_EQ(chain.pass.count, 11);  // all 11 tools, so the LUT loaded
     const std::vector<float> expected = dyeline::test::cpu_reference(src, args, chain);
 
     const NSUInteger bytes = src.size() * sizeof(float);
@@ -39,12 +40,25 @@ TEST(MetalBackend, MatchesCpuReference) {
     std::memset(dst_buffer.contents, 0, bytes);
 
     EXPECT_EQ(dyeline::metal::render_chain((__bridge void*)queue, (__bridge const void*)src_buffer,
-                                           (__bridge void*)dst_buffer, args, chain, /*wait=*/true),
+                                           (__bridge void*)dst_buffer, args, chain.pass,
+                                           chain.table.data(), chain.table.size(), /*wait=*/true),
               "");
 
     const auto* result = static_cast<const float*>(dst_buffer.contents);
     for (std::size_t i = 0; i < src.size(); ++i) {
         ASSERT_NEAR(result[i], expected[i], dyeline::test::tolerance(expected[i])) << "index " << i;
+    }
+
+    const dyeline::CompiledChain plain = dyeline::test::table_free_chain();
+    ASSERT_TRUE(plain.table.empty());
+    const std::vector<float> plain_expected = dyeline::test::cpu_reference(src, args, plain);
+    EXPECT_EQ(dyeline::metal::render_chain((__bridge void*)queue, (__bridge const void*)src_buffer,
+                                           (__bridge void*)dst_buffer, args, plain.pass, nullptr, 0,
+                                           /*wait=*/true),
+              "");
+    for (std::size_t i = 0; i < src.size(); ++i) {
+        ASSERT_NEAR(result[i], plain_expected[i], dyeline::test::tolerance(plain_expected[i]))
+            << "index " << i;
     }
 }
 
