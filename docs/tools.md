@@ -103,3 +103,26 @@ without brightening or darkening, and tones never swap places.
 | `highlights-hue` | 50 | 0 to 360 | Highlights tint direction. |
 | `highlights-amount` | 0 | 0 to 1 | Highlights tint strength. |
 | `pivot` | 0.18 | 0.001 to 10 | The center of the midtones. |
+
+## LUT (`lut`)
+
+Applies a `.cube` LUT file, 1D or 3D, like the ones other grading tools export. 3D tables use
+tetrahedral interpolation. Values outside the table's input domain are held at its edges.
+
+Most LUTs are built for display-encoded video, not the scene-linear light Dyeline works in. LUT
+Gamma bridges that: each value is raised to 1/gamma before the lookup and the result to gamma
+after, so a LUT built for gamma-2.4 video can be applied with LUT Gamma 2.4.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `file` | none | path | The `.cube` file. A relative path is relative to the look file's folder; `~` is the home folder. |
+| `gamma` | 1 | 0.2 to 5 | LUT Gamma: the encoding the LUT expects. 1 means scene-linear. |
+
+```json
+{ "tool": "lut", "params": { "file": "luts/film.cube", "gamma": 2.4 } }
+```
+
+If the file can't be read, the LUT is bypassed and the plugin shows a warning saying why.
+Files with both a 1D and a 3D table, and 3D tables over 129 points, aren't supported yet. Like a
+look file, a LUT changed on disk is picked up on the next render; EffectCraft needs Reload Look
+File bumped to render again.

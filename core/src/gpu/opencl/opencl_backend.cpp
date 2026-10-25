@@ -134,7 +134,8 @@ bool available() {
 }
 
 std::string render_chain(void* command_queue, const void* src_buffer, void* dst_buffer,
-                         const dl_image_args& args, const dl_chain& chain, bool wait) {
+                         const dl_image_args& args, const dl_chain& chain, const float* table,
+                         std::size_t table_floats, bool wait) {
     if (args.width <= 0 || args.height <= 0) {
         return {};
     }
@@ -171,23 +172,41 @@ std::string render_chain(void* command_queue, const void* src_buffer, void* dst_
     if (err != CL_SUCCESS) {
         return cl_error("Could not upload the look to OpenCL", err);
     }
+    // The tables likewise; a chain without any passes a null buffer.
+    cl_mem table_buffer = nullptr;
+    if (table_floats > 0) {
+        table_buffer = cl->CreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                        table_floats * sizeof(float), const_cast<float*>(table),
+                                        &err);
+        if (err != CL_SUCCESS) {
+            cl->ReleaseMemObject(chain_buffer);
+            return cl_error("Could not upload the look's tables to OpenCL", err);
+        }
+    }
+    const auto release_buffers = [&] {
+        cl->ReleaseMemObject(chain_buffer);
+        if (table_buffer != nullptr) {
+            cl->ReleaseMemObject(table_buffer);
+        }
+    };
     // A kernel object per render: kernel arguments are not safe to set from several threads.
     cl_kernel kernel = cl->CreateKernel(program, "dl_chain_kernel", &err);
     if (err != CL_SUCCESS) {
-        cl->ReleaseMemObject(chain_buffer);
+        release_buffers();
         return cl_error("Could not create the OpenCL kernel", err);
     }
     err = cl->SetKernelArg(kernel, 0, sizeof(cl_mem), &src);
     if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 1, sizeof(cl_mem), &dst);
     if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 2, sizeof(args), &args);
     if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 3, sizeof(cl_mem), &chain_buffer);
+    if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 4, sizeof(cl_mem), &table_buffer);
     if (err == CL_SUCCESS) {
         const std::size_t global[2] = {static_cast<std::size_t>(args.width),
                                        static_cast<std::size_t>(args.height)};
         err = cl->EnqueueNDRangeKernel(queue, kernel, 2, nullptr, global, nullptr, 0, nullptr, nullptr);
     }
     cl->ReleaseKernel(kernel);
-    cl->ReleaseMemObject(chain_buffer);
+    release_buffers();
     if (err != CL_SUCCESS) {
         return cl_error("OpenCL kernel failed to launch", err);
     }

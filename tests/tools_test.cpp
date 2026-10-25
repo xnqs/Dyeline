@@ -7,6 +7,7 @@
 
 #include "dyeline/chain.h"
 #include "dyeline/tools.h"
+#include "temp_file.h"
 
 namespace {
 
@@ -28,7 +29,7 @@ std::vector<float> run(const ToolEntry& entry, std::vector<float> px) {
     std::string error;
     EXPECT_TRUE(dyeline::compile_chain(look, 1.0, chain, error)) << error;
     std::vector<float> out(4);
-    dyeline::render_chain_row(px.data(), out.data(), 1, 4, false, chain.pass);
+    dyeline::render_chain_row(px.data(), out.data(), 1, 4, false, chain);
     return out;
 }
 
@@ -46,7 +47,7 @@ bool skipped(const ToolEntry& entry) {
 
 TEST(Tools, AllAreRegistered) {
     for (const char* id : {"exposure", "contrast", "s-curve", "hue-saturation", "black-white",
-                           "channel-mixer", "shadows-highlights", "highlight-shoulder", "three-way"}) {
+                           "channel-mixer", "shadows-highlights", "highlight-shoulder", "three-way", "lut"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }
@@ -241,6 +242,115 @@ TEST(ThreeWay, NeverReversesAndSkipsWhenUntinted) {
         }
     }
     EXPECT_TRUE(skipped(tool("three-way", {{"shadows-hue", 90.0}})));
+}
+
+using dyeline::test::cube_3d;
+using dyeline::test::TempFile;
+
+ToolEntry lut_tool(const TempFile& file, double gamma = 1.0) {
+    return tool("lut", {{"file", file.path()}, {"gamma", gamma}});
+}
+
+TEST(Lut, IdentityTableGivesTheInputBack) {
+    const TempFile file(cube_3d(5, [](double r, double g, double b, double out[3]) {
+                            out[0] = r;
+                            out[1] = g;
+                            out[2] = b;
+                        }),
+                        ".cube");
+    for (const std::vector<float>& px : {std::vector<float>{0.1f, 0.6f, 0.33f, 0.5f},
+                                         std::vector<float>{0.9f, 0.05f, 0.5f, 1.0f}}) {
+        const auto out = run(lut_tool(file), px);
+        for (int k = 0; k < 4; ++k) {
+            EXPECT_NEAR(out[k], px[k], 1e-6f);
+        }
+        // LUT Gamma cancels out around an identity table.
+        const auto gamma = run(lut_tool(file, 2.4), px);
+        for (int k = 0; k < 3; ++k) {
+            EXPECT_NEAR(gamma[k], px[k], 1e-5f);
+        }
+    }
+}
+
+TEST(Lut, TetrahedralInterpolationIsExactForLinearTables) {
+    const auto linear = [](double r, double g, double b, double out[3]) {
+        out[0] = 0.8 * r + 0.15 * g + 0.05 * b;
+        out[1] = 0.1 * r + 0.7 * g + 0.2 * b + 0.02;
+        out[2] = -0.1 * r + 0.3 * g + 0.9 * b;
+    };
+    const TempFile file(cube_3d(3, linear), ".cube");
+    // One point inside each of a cell's six tetrahedra: every ordering of the fractions.
+    const float a = 0.1f, b = 0.25f, c = 0.4f;
+    const float orders[6][3] = {{c, b, a}, {c, a, b}, {b, a, c}, {a, b, c}, {a, c, b}, {b, c, a}};
+    for (const auto& o : orders) {
+        double expected[3];
+        linear(o[0], o[1], o[2], expected);
+        const auto out = run(lut_tool(file), {o[0], o[1], o[2], 1.0f});
+        for (int k = 0; k < 3; ++k) {
+            EXPECT_NEAR(out[k], expected[k], 1e-6) << o[0] << " " << o[1] << " " << o[2];
+        }
+    }
+}
+
+TEST(Lut, HoldsValuesOutsideTheDomainAtItsEdges) {
+    const TempFile file(cube_3d(2, [](double r, double g, double b, double out[3]) {
+                            out[0] = 0.5 * r;
+                            out[1] = 0.5 * g;
+                            out[2] = 0.5 * b;
+                        }),
+                        ".cube");
+    const auto out = run(lut_tool(file), {4.0f, -1.0f, 0.5f, 1.0f});
+    EXPECT_NEAR(out[0], 0.5f, 1e-6f);
+    EXPECT_NEAR(out[1], 0.0f, 1e-6f);
+    EXPECT_NEAR(out[2], 0.25f, 1e-6f);
+}
+
+TEST(Lut, OneDimensionalTablesUseTheirDomain) {
+    // Per channel over [0, 2]: red doubles, green is a curve, blue is inverted.
+    const TempFile file("LUT_1D_SIZE 3\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 2 2 2\n"
+                        "0 0 1\n2 0.25 0.5\n4 1 0\n",
+                        ".cube");
+    const auto out = run(lut_tool(file), {0.5f, 1.5f, 2.0f, 1.0f});
+    EXPECT_NEAR(out[0], 1.0f, 1e-6f);
+    EXPECT_NEAR(out[1], 0.625f, 1e-6f);
+    EXPECT_NEAR(out[2], 0.0f, 1e-6f);
+}
+
+TEST(Lut, FindsRelativePathsAndReportsMissingFiles) {
+    const TempFile file("LUT_1D_SIZE 2\n0 0 0\n2 2 2\n", ".cube");
+    Look look;
+    look.chain = {tool("lut", {{"file", file.name()}})};
+    dyeline::CompiledChain chain;
+    std::string error;
+    ASSERT_TRUE(dyeline::compile_chain(look, 1.0, chain, error, file.folder())) << error;
+    EXPECT_EQ(chain.pass.count, 1);
+    EXPECT_TRUE(chain.problems.empty());
+    EXPECT_EQ(chain.table.size(), 6u);
+
+    look.chain = {tool("lut", {{"file", file.path() + ".missing"}})};
+    ASSERT_TRUE(dyeline::compile_chain(look, 1.0, chain, error)) << error;
+    EXPECT_EQ(chain.pass.count, 0);
+    ASSERT_EQ(chain.problems.size(), 1u);
+    EXPECT_NE(chain.problems[0].find("LUT: could not open"), std::string::npos);
+
+    // No file chosen yet: nothing to run, nothing to report.
+    EXPECT_TRUE(skipped(tool("lut", nlohmann::json::object())));
+}
+
+TEST(Lut, TwoLutsShareTheTableData) {
+    const TempFile first("LUT_1D_SIZE 2\n0 0 0\n2 2 2\n", ".cube");
+    const TempFile second("LUT_1D_SIZE 2\n0 0 0\n0.5 0.5 0.5\n", ".cube");
+    Look look;
+    look.chain = {lut_tool(first), lut_tool(second)};
+    dyeline::CompiledChain chain;
+    std::string error;
+    ASSERT_TRUE(dyeline::compile_chain(look, 1.0, chain, error)) << error;
+    ASSERT_EQ(chain.pass.count, 2);
+    EXPECT_EQ(chain.pass.ops[1].p[0], 6.0f);  // the second table starts after the first
+    std::vector<float> out(4);
+    const std::vector<float> px = {0.3f, 0.3f, 0.3f, 1.0f};
+    dyeline::render_chain_row(px.data(), out.data(), 1, 4, false, chain);
+    EXPECT_NEAR(out[0], 0.3f, 1e-6f);  // doubled, then halved
 }
 
 }  // namespace

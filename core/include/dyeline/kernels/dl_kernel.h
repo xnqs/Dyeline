@@ -4,7 +4,8 @@
 // as plain C++ (the CPU path and the reference every GPU result is tested against), as CUDA,
 // as Metal Shading Language and as OpenCL C. Kernel headers may use only what this
 // file defines plus basic C arithmetic: no standard library, no exceptions, no templates.
-// DL_GLOBAL marks image buffers, DL_CONSTANT the small read-only chain description. The dl_
+// DL_GLOBAL marks image buffers and table data, DL_CONSTANT the small read-only chain
+// description. The dl_
 // math functions are single precision on every backend.
 #ifndef DYELINE_KERNELS_DL_KERNEL_H
 #define DYELINE_KERNELS_DL_KERNEL_H

@@ -12,6 +12,7 @@
 #include "dyeline/chain.h"
 #include "dyeline/kernels/chain_kernel.h"
 #include "dyeline/look.h"
+#include "temp_file.h"
 
 namespace dyeline::test {
 
@@ -49,7 +50,14 @@ inline dl_image_args window_args(int width, int height) {
 
 // A look using every per-pixel tool at partial strengths, under a partial overall strength,
 // so each tool's math, op order and both blends run on the GPU.
-inline dl_chain test_chain() {
+inline CompiledChain test_chain() {
+    // A curved 3D LUT under LUT Gamma 2, with the frame's values reaching past its domain.
+    const TempFile lut(cube_3d(9, [](double r, double g, double b, double out[3]) {
+                           out[0] = 0.9 * std::pow(r, 0.8) + 0.05 * g;
+                           out[1] = 0.7 * g * g + 0.2 * b + 0.05;
+                           out[2] = 0.8 * std::sqrt(b) + 0.1 * r;
+                       }),
+                       ".cube");
     Look look;
     auto add = [&](const char* id, double strength, nlohmann::json params) {
         ToolEntry entry;
@@ -69,20 +77,34 @@ inline dl_chain test_chain() {
     add("three-way", 0.8, {{"shadows-hue", 210.0}, {"shadows-amount", 0.7},
                            {"midtones-hue", 30.0}, {"midtones-amount", 0.3},
                            {"highlights-hue", 60.0}, {"highlights-amount", 0.5}});
+    add("lut", 0.9, {{"file", lut.path()}, {"gamma", 2.0}});
     add("exposure", 0.5, {{"stops", -2.0}});
     CompiledChain chain;
     std::string error;
     compile_chain(look, 0.8, chain, error);
-    return chain.pass;
+    return chain;
+}
+
+// A chain without table data, so the backends' path for a look with no LUT runs too.
+inline CompiledChain table_free_chain() {
+    Look look;
+    ToolEntry entry;
+    entry.tool = "exposure";
+    entry.params = {{"stops", 0.7}};
+    look.chain.push_back(entry);
+    CompiledChain chain;
+    std::string error;
+    compile_chain(look, 1.0, chain, error);
+    return chain;
 }
 
 // The CPU result for the same args: the reference every GPU backend must match.
 inline std::vector<float> cpu_reference(const std::vector<float>& src, const dl_image_args& args,
-                                        const dl_chain& chain) {
+                                        const CompiledChain& chain) {
     std::vector<float> dst(src.size(), 0.0f);
     for (int y = 0; y < args.height; ++y) {
         for (int x = 0; x < args.width; ++x) {
-            dl_chain_at(src.data(), dst.data(), x, y, args, &chain);
+            dl_chain_at(src.data(), dst.data(), x, y, args, &chain.pass, chain.table.data());
         }
     }
     return dst;

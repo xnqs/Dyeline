@@ -2,6 +2,10 @@
 
 #include <cmath>
 #include <cstddef>
+#include <memory>
+
+#include "dyeline/cube.h"
+#include "dyeline/paths.h"
 
 namespace dyeline {
 
@@ -173,29 +177,67 @@ void encode_highlight_shoulder(const ParamValues& v, dl_op& op) {
     op.p[1] = static_cast<float>(v[0] * (std::exp2(v[1]) - 1.0));
 }
 
+// LUT: a .cube file, with LUT Gamma applied around the lookup (see lut.h). The table goes in
+// the chain's table data; offsets are stored as floats, which hold integers exactly below 2^24.
+constexpr std::size_t kMaxTableFloats = std::size_t{1} << 24;
+
+void encode_unused(const ParamValues&, dl_op&) {}
+
+bool prepare_lut(PrepareContext& context, dl_op& op, std::string& problem) {
+    const auto file = context.params.find("file");
+    if (file == context.params.end() || !file->is_string() || file->get<std::string>().empty()) {
+        return false;  // no LUT chosen yet
+    }
+    const std::string path = resolve_path(file->get<std::string>(), context.base_dir);
+    std::string error;
+    const std::shared_ptr<const CubeLut> lut = load_cube(path, error);
+    if (lut == nullptr) {
+        problem = error;
+        return false;
+    }
+    if (context.table.size() + lut->data.size() > kMaxTableFloats) {
+        problem = path + ": the look's LUTs are too large to load together";
+        return false;
+    }
+    op.tool = DL_OP_LUT;
+    op.p[0] = static_cast<float>(context.table.size());
+    op.p[1] = static_cast<float>(lut->size);
+    op.p[2] = lut->is_3d ? 1.0f : 0.0f;
+    for (int k = 0; k < 3; ++k) {
+        op.p[3 + k] = lut->domain_min[k];
+        op.p[6 + k] = static_cast<float>((lut->size - 1) /
+                                         (static_cast<double>(lut->domain_max[k]) - lut->domain_min[k]));
+    }
+    const double gamma = context.values[0];
+    op.p[9] = static_cast<float>(1.0 / gamma);
+    op.p[10] = static_cast<float>(gamma);
+    context.table.insert(context.table.end(), lut->data.begin(), lut->data.end());
+    return true;
+}
+
 std::vector<ToolSpec> make_tools() {
     std::vector<ToolSpec> tools;
     tools.push_back({"exposure", "Exposure", ToolCategory::Matte, 1,
                      {{"stops", "Exposure", 0.0, -16.0, 16.0}},
-                     nullptr, encode_exposure, exposure_is_identity});
+                     nullptr, encode_exposure, exposure_is_identity, nullptr});
     tools.push_back({"contrast", "Contrast", ToolCategory::Matte, 1,
                      {{"contrast", "Contrast", 1.0, 0.0, 4.0},
                       {"pivot", "Pivot", 0.18, 0.001, 10.0}},
-                     nullptr, encode_contrast, contrast_is_identity});
+                     nullptr, encode_contrast, contrast_is_identity, nullptr});
     tools.push_back({"s-curve", "S Curve", ToolCategory::Matte, 1,
                      {{"amount", "Amount", 0.5, 0.0, 1.0},
                       {"pivot", "Pivot", 0.18, 0.001, 10.0},
                       {"range", "Range", 5.0, 1.0, 12.0}},
-                     nullptr, encode_s_curve, s_curve_is_identity});
+                     nullptr, encode_s_curve, s_curve_is_identity, nullptr});
     tools.push_back({"hue-saturation", "Hue/Saturation", ToolCategory::Matte, 1,
                      {{"hue", "Hue", 0.0, -180.0, 180.0},
                       {"saturation", "Saturation", 1.0, 0.0, 4.0}},
-                     nullptr, encode_hue_saturation, hue_saturation_is_identity});
+                     nullptr, encode_hue_saturation, hue_saturation_is_identity, nullptr});
     tools.push_back({"black-white", "Black & White", ToolCategory::Matte, 1,
                      {{"red", "Red", 0.27, 0.0, 2.0},
                       {"green", "Green", 0.67, 0.0, 2.0},
                       {"blue", "Blue", 0.06, 0.0, 2.0}},
-                     nullptr, encode_black_white, never_identity});
+                     nullptr, encode_black_white, never_identity, nullptr});
     tools.push_back({"channel-mixer", "Channel Mixer", ToolCategory::Matte, 1,
                      {{"red-from-red", "Red from Red", 1.0, -2.0, 2.0},
                       {"red-from-green", "Red from Green", 0.0, -2.0, 2.0},
@@ -206,16 +248,16 @@ std::vector<ToolSpec> make_tools() {
                       {"blue-from-red", "Blue from Red", 0.0, -2.0, 2.0},
                       {"blue-from-green", "Blue from Green", 0.0, -2.0, 2.0},
                       {"blue-from-blue", "Blue from Blue", 1.0, -2.0, 2.0}},
-                     nullptr, encode_channel_mixer, channel_mixer_is_identity});
+                     nullptr, encode_channel_mixer, channel_mixer_is_identity, nullptr});
     tools.push_back({"shadows-highlights", "Shadows/Highlights", ToolCategory::Matte, 1,
                      {{"shadows", "Shadows", 0.0, -2.0, 2.0},
                       {"highlights", "Highlights", 0.0, -2.0, 2.0},
                       {"pivot", "Pivot", 0.18, 0.001, 10.0}},
-                     nullptr, encode_shadows_highlights, shadows_highlights_is_identity});
+                     nullptr, encode_shadows_highlights, shadows_highlights_is_identity, nullptr});
     tools.push_back({"highlight-shoulder", "Highlight Shoulder", ToolCategory::Camera, 1,
                      {{"start", "Start", 1.0, 0.05, 16.0},
                       {"headroom", "Headroom", 1.5, 0.1, 8.0}},
-                     nullptr, encode_highlight_shoulder, never_identity});
+                     nullptr, encode_highlight_shoulder, never_identity, nullptr});
     tools.push_back({"three-way", "3-Way Grade", ToolCategory::Matte, 1,
                      {{"shadows-hue", "Shadows Hue", 220.0, 0.0, 360.0},
                       {"shadows-amount", "Shadows Amount", 0.0, 0.0, 1.0},
@@ -224,7 +266,10 @@ std::vector<ToolSpec> make_tools() {
                       {"highlights-hue", "Highlights Hue", 50.0, 0.0, 360.0},
                       {"highlights-amount", "Highlights Amount", 0.0, 0.0, 1.0},
                       {"pivot", "Pivot", 0.18, 0.001, 10.0}},
-                     nullptr, encode_three_way, three_way_is_identity});
+                     nullptr, encode_three_way, three_way_is_identity, nullptr});
+    tools.push_back({"lut", "LUT", ToolCategory::Matte, 1,
+                     {{"gamma", "LUT Gamma", 1.0, 0.2, 5.0}},
+                     nullptr, encode_unused, never_identity, prepare_lut});
     return tools;
 }
 

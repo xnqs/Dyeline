@@ -11,6 +11,7 @@ include(GoogleTest)
 
 add_executable(dyeline_core_tests
     chain_test.cpp
+    cube_test.cpp
     look_test.cpp
     tools_test.cpp
 )

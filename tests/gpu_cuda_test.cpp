@@ -25,7 +25,8 @@ TEST(CudaBackend, MatchesCpuReference) {
     const int height = 23;
     const std::vector<float> src = dyeline::test::make_frame(width, height);
     const dl_image_args args = dyeline::test::window_args(width, height);
-    const dl_chain chain = dyeline::test::test_chain();
+    const dyeline::CompiledChain chain = dyeline::test::test_chain();
+    ASSERT_EQ(chain.pass.count, 11);  // all 11 tools, so the LUT loaded
     const std::vector<float> expected = dyeline::test::cpu_reference(src, args, chain);
 
     const std::size_t bytes = src.size() * sizeof(float);
@@ -36,7 +37,8 @@ TEST(CudaBackend, MatchesCpuReference) {
     ASSERT_EQ(cudaMemcpy(d_src, src.data(), bytes, cudaMemcpyHostToDevice), cudaSuccess);
     ASSERT_EQ(cudaMemset(d_dst, 0, bytes), cudaSuccess);
 
-    EXPECT_EQ(dyeline::cuda::render_chain(nullptr, d_src, d_dst, args, chain, /*wait=*/true), "");
+    EXPECT_EQ(dyeline::cuda::render_chain(nullptr, d_src, d_dst, args, chain.pass,
+                                          chain.table.data(), chain.table.size(), /*wait=*/true), "");
 
     std::vector<float> result(src.size());
     ASSERT_EQ(cudaMemcpy(result.data(), d_dst, bytes, cudaMemcpyDeviceToHost), cudaSuccess);
