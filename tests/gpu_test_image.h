@@ -6,9 +6,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <string>
 #include <vector>
 
+#include "dyeline/chain.h"
 #include "dyeline/kernels/chain_kernel.h"
+#include "dyeline/look.h"
 
 namespace dyeline::test {
 
@@ -44,19 +47,26 @@ inline dl_image_args window_args(int width, int height) {
     return args;
 }
 
-// Two Exposure ops at partial strengths, under a partial overall strength, so op order,
-// per-tool blending and the overall blend are all exercised.
+// A look using every per-pixel tool at partial strengths, under a partial overall strength,
+// so each tool's math, op order and both blends run on the GPU.
 inline dl_chain test_chain() {
-    dl_chain chain{};
-    chain.count = 2;
-    chain.strength = 0.8f;
-    chain.ops[0].tool = DL_OP_EXPOSURE;
-    chain.ops[0].strength = 1.0f;
-    chain.ops[0].p[0] = 2.5f;
-    chain.ops[1].tool = DL_OP_EXPOSURE;
-    chain.ops[1].strength = 0.5f;
-    chain.ops[1].p[0] = 0.25f;
-    return chain;
+    Look look;
+    auto add = [&](const char* id, double strength, nlohmann::json params) {
+        ToolEntry entry;
+        entry.tool = id;
+        entry.strength = strength;
+        entry.params = std::move(params);
+        look.chain.push_back(std::move(entry));
+    };
+    add("exposure", 1.0, {{"stops", 1.3}});
+    add("contrast", 0.9, {{"contrast", 1.4}, {"pivot", 0.2}});
+    add("s-curve", 1.0, {{"amount", 0.6}, {"range", 4.0}});
+    add("hue-saturation", 0.7, {{"hue", 25.0}, {"saturation", 1.6}});
+    add("exposure", 0.5, {{"stops", -2.0}});
+    CompiledChain chain;
+    std::string error;
+    compile_chain(look, 0.8, chain, error);
+    return chain.pass;
 }
 
 // The CPU result for the same args: the reference every GPU backend must match.

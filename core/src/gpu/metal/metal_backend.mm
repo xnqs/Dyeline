@@ -34,6 +34,8 @@ std::string pipelines_for(id<MTLDevice> device, Pipelines& out) {
         NSError* error = nil;
         NSString* source = [NSString stringWithUTF8String:kDyelineMetalSource];
         MTLCompileOptions* options = [MTLCompileOptions new];
+        // Precise math, so a look renders the same on a Mac as on the CPU and other GPUs.
+        options.fastMathEnabled = NO;
         id<MTLLibrary> library = [device newLibraryWithSource:source options:options error:&error];
         if (library == nil) {
             return std::string("Metal kernel compile failed: ") +

@@ -7,7 +7,10 @@
 #define DYELINE_KERNELS_CHAIN_KERNEL_H
 
 #include "dl_kernel.h"
+#include "tools/contrast.h"
 #include "tools/exposure.h"
+#include "tools/hue_saturation.h"
+#include "tools/s_curve.h"
 
 // At most this many tools run in one pass, and each gets this many floats of parameters.
 #define DL_MAX_OPS 16
@@ -15,6 +18,9 @@
 
 // Op codes. Saved looks name tools by string, so these may be renumbered freely.
 #define DL_OP_EXPOSURE 1
+#define DL_OP_CONTRAST 2
+#define DL_OP_S_CURVE 3
+#define DL_OP_HUE_SATURATION 4
 
 // One tool in the pass. `strength` blends between the tool's input and output.
 struct dl_op {
@@ -55,6 +61,12 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op) {
     switch (op->tool) {
         case DL_OP_EXPOSURE:
             return dl_tool_exposure(c, op->p);
+        case DL_OP_CONTRAST:
+            return dl_tool_contrast(c, op->p);
+        case DL_OP_S_CURVE:
+            return dl_tool_s_curve(c, op->p);
+        case DL_OP_HUE_SATURATION:
+            return dl_tool_hue_saturation(c, op->p);
         default:
             return c;
     }
