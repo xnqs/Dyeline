@@ -7,7 +7,7 @@ workflow of Magic Bullet Looks.
 > Dyeline is not affiliated with, endorsed by or connected to Maxon or Red Giant. "Magic Bullet
 > Looks" is their trademark and is named here only to describe what Dyeline is an alternative to.
 
-**Status:** Milestone 2 in progress, after the 0.1 alpha. The plugin renders a look, a chain of
+**Status:** 0.5 beta, the end of Milestone 2 (see [CHANGELOG.md](CHANGELOG.md)). The plugin renders a look, a chain of
 tools, on the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS) when
 the host provides one, else on its own OpenCL or Metal device, else on the CPU. The tools so far are Exposure, Contrast, S Curve, Hue/Saturation, Black & White, Channel
 Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade (with HSL and Sat EQ), 4-Way Wheels,
@@ -16,7 +16,7 @@ Grad Exposure, Spot Exposure, Fill Light, Spot Fill, Color Filter, Lens Vignette
 Diffusion Filter, Local Contrast, Telecine Net and Halation (see
 [docs/tools.md](docs/tools.md)). The Look Designer edits the chain, the tools and the color
 settings, with a preview of the host's current frame, its scopes, and a looks browser with 22
-bundled looks. It is not useful for real work yet.
+bundled looks. It is a beta: try it on real projects, and expect rough edges.
 
 ## Looks
 

@@ -68,8 +68,8 @@ TEST(PluginLoad, ExportsOneImageEffect) {
     EXPECT_STREQ(plugin->pluginApi, kOfxImageEffectPluginApi);
     EXPECT_EQ(plugin->apiVersion, 1);
     EXPECT_STREQ(plugin->pluginIdentifier, "io.github.xnqs.Dyeline");
-    EXPECT_EQ(plugin->pluginVersionMajor, 0u);
-    EXPECT_EQ(plugin->pluginVersionMinor, 1u);
+    EXPECT_EQ(plugin->pluginVersionMajor, static_cast<unsigned>(DYELINE_VERSION_MAJOR));
+    EXPECT_EQ(plugin->pluginVersionMinor, static_cast<unsigned>(DYELINE_VERSION_MINOR));
     EXPECT_NE(plugin->setHost, nullptr);
     EXPECT_NE(plugin->mainEntry, nullptr);
 }
