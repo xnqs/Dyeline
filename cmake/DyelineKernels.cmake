@@ -26,9 +26,24 @@ function(dyeline_embed_kernels out_var name symbol wrapper)
     set(source_file ${CMAKE_CURRENT_BINARY_DIR}/${name})
     set(cpp_file ${CMAKE_CURRENT_BINARY_DIR}/${name}.cpp)
     file(WRITE ${source_file} "${joined}")
+
+    # The source goes in as a byte array rather than a string literal: MSVC caps a string
+    # literal at 16 KB (64 KB when concatenated), and the kernels are already past the first.
+    # Kernel sources must be ASCII: a byte above 0x7f would not fit a char initializer.
+    file(READ ${source_file} hex HEX)
+    string(LENGTH "${hex}" hex_length)
+    set(bytes "")
+    set(offset 0)
+    while(offset LESS hex_length)
+        string(SUBSTRING "${hex}" ${offset} 64 row)
+        string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," row "${row}")
+        string(APPEND bytes "    ${row}\n")
+        math(EXPR offset "${offset} + 64")
+    endwhile()
     file(WRITE ${cpp_file}
         "// Generated from the shared kernel headers. Do not edit.\n"
         "extern const char* const ${symbol};\n"
-        "const char* const ${symbol} = R\"DLKERNEL(\n${joined})DLKERNEL\";\n")
+        "static const char ${symbol}_bytes[] = {\n${bytes}    0x00};\n"
+        "const char* const ${symbol} = ${symbol}_bytes;\n")
     set(${out_var} ${cpp_file} PARENT_SCOPE)
 endfunction()
