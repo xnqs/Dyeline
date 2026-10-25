@@ -766,6 +766,15 @@ void App::draw_tool() {
                 }
                 break;
             }
+            case ParamKind::Choice: {
+                const int count = static_cast<int>(spec.choices.size());
+                int n = std::clamp(static_cast<int>(std::lround(value)), 0, count - 1);
+                if (ImGui::Combo(spec.label, &n, spec.choices.data(), count)) {
+                    editor_.set_param(selected_, spec, n);
+                    editor_.end_gesture();
+                }
+                break;
+            }
             case ParamKind::Number: {
                 float v = static_cast<float>(value);
                 ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;

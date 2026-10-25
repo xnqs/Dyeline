@@ -1,0 +1,37 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Vision3 500T on 2383",
+    "tags": [
+      "film",
+      "print",
+      "tungsten",
+      "contrast"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "film-negative",
+      "params": {
+        "stock": 0
+      }
+    },
+    {
+      "tool": "film-print",
+      "params": {
+        "stock": 0
+      }
+    },
+    {
+      "tool": "grain",
+      "strength": 0.6,
+      "params": {
+        "amount": 0.25,
+        "size": 1.5,
+        "color": 0.3
+      }
+    }
+  ]
+}

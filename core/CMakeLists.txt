@@ -5,6 +5,7 @@ add_library(dyeline_core STATIC
     src/cube_export.cpp
     src/designer_link.cpp
     src/effectcraft.cpp
+    src/film.cpp
     src/frame_file.cpp
     src/library.cpp
     src/look.cpp

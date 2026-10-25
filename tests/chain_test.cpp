@@ -85,14 +85,14 @@ TEST(CompileChain, DefaultsAndClampsParameters) {
 TEST(CompileChain, BypassesUnknownAndNewerTools) {
     Look look;
     ToolEntry unknown;
-    unknown.tool = "film-negative";
+    unknown.tool = "future-tool";
     ToolEntry newer = exposure(1.0);
     newer.tool_version = 99;
     look.chain = {unknown, exposure(1.0), newer};
     const CompiledChain chain = compile(look);
     EXPECT_EQ(chain.pass.count, 1);
     ASSERT_EQ(chain.missing_tools.size(), 2u);
-    EXPECT_EQ(chain.missing_tools[0], "film-negative");
+    EXPECT_EQ(chain.missing_tools[0], "future-tool");
     EXPECT_EQ(chain.missing_tools[1], "exposure");
 }
 

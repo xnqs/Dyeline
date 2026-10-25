@@ -30,7 +30,7 @@ TEST(MetalBackend, MatchesCpuReference) {
     const std::vector<float> src = dyeline::test::make_frame(width, height);
     const dyeline::RenderGeometry geometry = dyeline::test::window_geometry(width, height);
     const dyeline::CompiledChain chain = dyeline::test::test_chain();
-    ASSERT_EQ(chain.pass.count, 15);  // all 15 tools, so the LUT loaded
+    ASSERT_EQ(chain.pass.count, 16);  // all 16 tools, so the tables loaded
     const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, geometry);
     const std::vector<float> expected = dyeline::test::cpu_reference(src, plan, chain);
 

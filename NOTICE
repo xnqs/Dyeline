@@ -6,6 +6,13 @@ This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 Film stock data, bundled looks and documentation are licensed under the Creative Commons
 Attribution 4.0 International license (CC-BY-4.0) unless a file says otherwise.
 
+Film stock data: the curves and spectra in core/film_data, and the tables built from them in
+core/src/film_stocks.inc, are manufacturers' datasheet values as digitized by spectral_film_lut
+(https://github.com/JanLohse/spectral_film_lut), Copyright (c) 2026 Jan Lohse, MIT license
+(core/film_data/LICENSE-spectral_film_lut). The table generator uses colour-science
+(https://github.com/colour-science/colour, BSD-3-Clause) and its ColorChecker spectra; it is
+run by hand and is not part of the build.
+
 Third-party software fetched at build time:
 
 - OpenFX SDK (https://github.com/AcademySoftwareFoundation/openfx), BSD-3-Clause.

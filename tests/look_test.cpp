@@ -19,7 +19,7 @@ constexpr const char* kExample = R"({
   "chain": [
     {"tool": "exposure", "toolVersion": 1, "enabled": true, "pinned": false, "strength": 0.5,
      "params": {"stops": 1.5}},
-    {"tool": "film-negative", "toolVersion": 3, "params": {"stock": "5219"}, "mask": {"kind": "spot"}}
+    {"tool": "future-tool", "toolVersion": 3, "params": {"stock": "5219"}, "mask": {"kind": "spot"}}
   ],
   "thumbnail": "data:image/png;base64,AAAA"
 })";
@@ -61,7 +61,7 @@ TEST(LookFormat, FillsDefaults) {
 TEST(LookFormat, RoundTripsUnknownToolsAndFields) {
     const Look again = parse(dyeline::write_look(parse(kExample)));
     ASSERT_EQ(again.chain.size(), 2u);
-    EXPECT_EQ(again.chain[1].tool, "film-negative");
+    EXPECT_EQ(again.chain[1].tool, "future-tool");
     EXPECT_EQ(again.chain[1].params["stock"], "5219");
     EXPECT_EQ(again.chain[1].extra["mask"]["kind"], "spot");
     EXPECT_EQ(again.extra["thumbnail"], "data:image/png;base64,AAAA");
