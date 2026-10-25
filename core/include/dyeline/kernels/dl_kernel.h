@@ -24,6 +24,9 @@ typedef float4 dl_float4;
 #define dl_fabs(x) fabsf(x)
 #define dl_sqrt(x) sqrtf(x)
 #define dl_floor(x) floorf(x)
+#define dl_atan2(y, x) atan2f((y), (x))
+#define dl_cos(x) cosf(x)
+#define dl_sin(x) sinf(x)
 
 #elif defined(__METAL_VERSION__)
 
@@ -41,6 +44,9 @@ typedef float4 dl_float4;
 #define dl_fabs(x) metal::fabs(x)
 #define dl_sqrt(x) metal::sqrt(x)
 #define dl_floor(x) metal::floor(x)
+#define dl_atan2(y, x) metal::atan2((y), (x))
+#define dl_cos(x) metal::cos(x)
+#define dl_sin(x) metal::sin(x)
 
 #elif defined(__OPENCL_VERSION__)
 
@@ -57,6 +63,9 @@ typedef float4 dl_float4;
 #define dl_fabs(x) fabs(x)
 #define dl_sqrt(x) sqrt(x)
 #define dl_floor(x) floor(x)
+#define dl_atan2(y, x) atan2((y), (x))
+#define dl_cos(x) cos(x)
+#define dl_sin(x) sin(x)
 
 #else  // C++ (CPU)
 
@@ -79,6 +88,9 @@ inline float dl_log2(float x) { return std::log2(x); }
 inline float dl_fabs(float x) { return std::fabs(x); }
 inline float dl_sqrt(float x) { return std::sqrt(x); }
 inline float dl_floor(float x) { return std::floor(x); }
+inline float dl_atan2(float y, float x) { return std::atan2(y, x); }
+inline float dl_cos(float x) { return std::cos(x); }
+inline float dl_sin(float x) { return std::sin(x); }
 
 #endif
 

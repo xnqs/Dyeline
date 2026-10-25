@@ -172,6 +172,7 @@ private:
     void save_to_library(bool replace);
     void toggle_favorite(const std::string& key);
     void draw_tool();
+    void draw_params(const dyeline::ToolSpec& tool, const char* group);
     void draw_preview(float height);
     void draw_handles(const ScreenRect& rect);
     void request_preview(bool allow_draft);
@@ -752,7 +753,40 @@ void App::draw_tool() {
         ImGui::TextUnformatted("File");
     }
 
+    // A tool with many parameters splits them into tabs, named by their groups in the order
+    // they first appear; ungrouped parameters come first.
+    std::vector<const char*> groups;
     for (const ParamSpec& spec : tool->params) {
+        if (spec.group != nullptr &&
+            std::none_of(groups.begin(), groups.end(),
+                         [&](const char* g) { return std::strcmp(g, spec.group) == 0; })) {
+            groups.push_back(spec.group);
+        }
+    }
+    if (groups.empty()) {
+        draw_params(*tool, nullptr);
+    } else if (ImGui::BeginTabBar("##groups")) {
+        if (ImGui::BeginTabItem(tool->main_tab)) {
+            draw_params(*tool, nullptr);
+            ImGui::EndTabItem();
+        }
+        for (const char* group : groups) {
+            if (ImGui::BeginTabItem(group)) {
+                draw_params(*tool, group);
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
+    ImGui::PopID();
+}
+
+void App::draw_params(const ToolSpec& tool, const char* group) {
+    for (const ParamSpec& spec : tool.params) {
+        if ((spec.group == nullptr) != (group == nullptr) ||
+            (group != nullptr && std::strcmp(spec.group, group) != 0)) {
+            continue;
+        }
         const double value = editor_.param(selected_, spec);
         switch (spec.kind) {
             case ParamKind::Toggle: {
@@ -808,7 +842,6 @@ void App::draw_tool() {
             ImGui::EndPopup();
         }
     }
-    ImGui::PopID();
 }
 
 void App::request_preview(bool allow_draft) {

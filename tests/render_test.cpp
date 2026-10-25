@@ -203,6 +203,36 @@ TEST(Halation, GlowsWarmAroundHighlightsOnly) {
     EXPECT_LT(at(out, n, 0, 0, 0) - 0.5f, red * 0.1f);  // fading with distance
 }
 
+TEST(LocalContrast, LeavesAnEvenImageAloneAndSharpensEdges) {
+    const CompiledChain chain = compile({tool("local-contrast", {{"amount", 0.5}, {"size", 4.0}})});
+    const int w = 40;
+    const int h = 20;
+    std::vector<float> even(static_cast<std::size_t>(w) * h * 3, 0.4f);
+    for (float v : render(chain, frame_geometry(w, h), even)) {
+        EXPECT_NEAR(v, 0.4f, 1e-5f);
+    }
+    std::vector<float> edge(even.size());
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            for (int k = 0; k < 3; ++k) {
+                edge[(static_cast<std::size_t>(y) * w + x) * 3 + k] = x < w / 2 ? 0.1f : 0.4f;
+            }
+        }
+    }
+    const std::vector<float> out = render(chain, frame_geometry(w, h), edge);
+    // Beside the edge, the dark side darkens and the bright side brightens; far from it the
+    // image is nearly untouched.
+    EXPECT_LT(at(out, w, w / 2 - 1, 10, 1), 0.09f);
+    EXPECT_GT(at(out, w, w / 2, 10, 1), 0.44f);
+    EXPECT_NEAR(at(out, w, 0, 10, 1), 0.1f, 0.005f);
+    // Less than zero softens instead.
+    const std::vector<float> soft =
+        render(compile({tool("local-contrast", {{"amount", -0.5}, {"size", 4.0}})}),
+               frame_geometry(w, h), edge);
+    EXPECT_GT(at(soft, w, w / 2 - 1, 10, 1), 0.11f);
+    EXPECT_TRUE(compile({tool("local-contrast", {{"amount", 0.0}})}).pass.count == 0);
+}
+
 TEST(RenderPlan, TilesMatchTheWholeFrame) {
     const CompiledChain chain = compile({tool("exposure", {{"stops", 0.5}}),
                                          tool("diffusion", {{"amount", 0.6}, {"size", 6.0}}),

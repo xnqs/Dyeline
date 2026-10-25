@@ -53,7 +53,7 @@ TEST(MetalBackend, MatchesCpuReference) {
 
     const dyeline::CompiledChain plain = dyeline::test::table_free_chain();
     ASSERT_TRUE(plain.table.empty());
-    ASSERT_EQ(plain.pass.count, 6);
+    ASSERT_EQ(plain.pass.count, 8);
     const dyeline::RenderPlan plain_plan = dyeline::plan_render(plain.pass, geometry);
     const std::vector<float> plain_expected = dyeline::test::cpu_reference(src, plain_plan, plain);
     EXPECT_EQ(dyeline::metal::render_plan((__bridge void*)queue, (__bridge const void*)src_buffer,
