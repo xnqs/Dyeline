@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Dyeline @VERSION@</title>
+    <license file="LICENSE.txt"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <domains enable_localSystem="true"/>
+    <choices-outline>
+        <line choice="dyeline"/>
+    </choices-outline>
+    <choice id="dyeline" title="Dyeline OFX plugin">
+        <pkg-ref id="org.dyeline.ofx"/>
+    </choice>
+    <pkg-ref id="org.dyeline.ofx" version="@VERSION@">Dyeline.pkg</pkg-ref>
+</installer-gui-script>
