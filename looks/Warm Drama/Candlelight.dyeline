@@ -1,0 +1,68 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Candlelight",
+    "tags": [
+      "warm",
+      "night",
+      "low key"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "exposure",
+      "params": {
+        "stops": -0.4
+      }
+    },
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 15,
+        "shadows-amount": 0.35,
+        "midtones-hue": 32,
+        "midtones-amount": 0.4,
+        "highlights-hue": 45,
+        "highlights-amount": 0.3,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "shadows-highlights",
+      "params": {
+        "shadows": -0.5
+      }
+    },
+    {
+      "tool": "diffusion",
+      "params": {
+        "amount": 0.35,
+        "size": 1.5,
+        "highlights": 0.7
+      }
+    },
+    {
+      "tool": "halation",
+      "params": {
+        "amount": 0.5,
+        "threshold": 0.8
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    },
+    {
+      "tool": "lens-vignette",
+      "params": {
+        "amount": -1.4,
+        "size": 0.4
+      }
+    }
+  ]
+}

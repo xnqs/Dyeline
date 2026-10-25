@@ -1,0 +1,68 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Seventies",
+    "tags": [
+      "faded",
+      "warm",
+      "retro"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "contrast",
+      "params": {
+        "contrast": 0.85
+      }
+    },
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 60,
+        "shadows-amount": 0.2,
+        "midtones-hue": 40,
+        "midtones-amount": 0.35,
+        "highlights-hue": 55,
+        "highlights-amount": 0.35,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "hue": -4,
+        "saturation": 0.85
+      }
+    },
+    {
+      "tool": "halation",
+      "params": {
+        "amount": 0.5,
+        "threshold": 1.0
+      }
+    },
+    {
+      "tool": "grain",
+      "params": {
+        "amount": 0.4,
+        "size": 2.0,
+        "color": 0.4
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    },
+    {
+      "tool": "lens-vignette",
+      "params": {
+        "amount": -0.8
+      }
+    }
+  ]
+}

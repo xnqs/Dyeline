@@ -12,6 +12,7 @@
 #include "dyeline/look.h"
 #include "preview.h"
 #include "scopes.h"
+#include "thumbnails.h"
 
 namespace {
 
@@ -197,4 +198,25 @@ TEST(Scopes, VectorscopeShowsGreyAtTheCenterAndRedTowardsItsTarget) {
     const int x = static_cast<int>((0.5f - 0.2126f / 1.8556f) * kVectorscopeSize);
     EXPECT_GT(pixel(red, x, 0)[1], 200);
     EXPECT_LT(pixel(red, c + 6, c + 10)[1], 60);  // near the center, off the graticule
+}
+
+TEST(Thumbnails, RenderEachJobAtThumbnailSize) {
+    const Frame frame = dyeline::designer::sample_frame(1920, 1080);
+    dyeline::designer::ThumbnailWorker worker(frame);
+    EXPECT_EQ(worker.frame().width, dyeline::designer::kThumbnailWidth);
+    std::vector<dyeline::designer::ThumbnailJob> jobs;
+    for (double stops : {-1.0, 1.0}) {
+        jobs.push_back({stops < 0 ? "dark" : "bright", exposure_look(stops), ""});
+    }
+    worker.request(std::move(jobs));
+    worker.wait_idle();
+    const auto done = worker.take();
+    ASSERT_EQ(done.size(), 2u);
+    EXPECT_EQ(done[0].first, "dark");
+    EXPECT_EQ(done[1].first, "bright");
+    EXPECT_EQ(done[0].second.width, dyeline::designer::kThumbnailWidth);
+    EXPECT_EQ(done[0].second.height, dyeline::designer::kThumbnailHeight);
+    // The same pixel, darker in the darker look.
+    EXPECT_LT(done[0].second.rgba[4000], done[1].second.rgba[4000]);
+    EXPECT_TRUE(worker.take().empty());
 }

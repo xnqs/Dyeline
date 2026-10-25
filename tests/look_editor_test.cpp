@@ -203,3 +203,26 @@ TEST(LookEditor, SavedClearsModified) {
     editor.mark_saved();
     EXPECT_FALSE(editor.modified());
 }
+
+TEST(LookEditor, AppliesAPresetButKeepsTheColorSettings) {
+    Look start;
+    start.meta.name = "Mine";
+    start.color.mode = "full";
+    start.color.input = "logc3";
+    LookEditor editor(start);
+    Look preset;
+    preset.meta.name = "Golden Hour";
+    preset.meta.tags = {"warm"};
+    preset.color.input = "srgb";
+    ToolEntry entry;
+    entry.tool = "exposure";
+    preset.chain.push_back(entry);
+    editor.apply_preset(preset);
+    EXPECT_EQ(editor.look().meta.name, "Golden Hour");
+    EXPECT_EQ(editor.look().chain.size(), 1u);
+    EXPECT_EQ(editor.look().color.input, "logc3");
+    EXPECT_EQ(editor.look().color.mode, "full");
+    ASSERT_TRUE(editor.undo());  // one step
+    EXPECT_EQ(editor.look().meta.name, "Mine");
+    EXPECT_TRUE(editor.look().chain.empty());
+}

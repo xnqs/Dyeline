@@ -1,0 +1,54 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Faded Print",
+    "tags": [
+      "faded",
+      "film",
+      "soft"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "contrast",
+      "params": {
+        "contrast": 0.75
+      }
+    },
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 200,
+        "shadows-amount": 0.15,
+        "midtones-hue": 45,
+        "midtones-amount": 0.15,
+        "highlights-hue": 55,
+        "highlights-amount": 0.2,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "saturation": 0.7
+      }
+    },
+    {
+      "tool": "grain",
+      "params": {
+        "amount": 0.35,
+        "size": 1.6,
+        "color": 0.3
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    }
+  ]
+}

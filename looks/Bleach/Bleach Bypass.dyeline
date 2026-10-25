@@ -1,0 +1,52 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Bleach Bypass",
+    "tags": [
+      "bleach",
+      "desaturated",
+      "contrast"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "exposure",
+      "params": {
+        "stops": -0.2
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "saturation": 0.45
+      }
+    },
+    {
+      "tool": "s-curve",
+      "params": {
+        "amount": 0.4
+      }
+    },
+    {
+      "tool": "shadows-highlights",
+      "params": {
+        "shadows": -0.3
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    },
+    {
+      "tool": "lens-vignette",
+      "params": {
+        "amount": -0.6
+      }
+    }
+  ]
+}

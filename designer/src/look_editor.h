@@ -50,6 +50,9 @@ public:
     void set_text_param(std::size_t i, const char* id, const std::string& value);
 
     void set_name(const std::string& name);
+    // Replaces the chain, name and tags with a preset's, as one undo step. The color settings
+    // stay: they describe the footage, and presets are graded in the working space.
+    void apply_preset(const Look& preset);
     void set_color(const LookColor& color);
 
     // Repeated changes to the same control (a slider being dragged) are one undo step until

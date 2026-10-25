@@ -1,0 +1,60 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Sunset Burn",
+    "tags": [
+      "warm",
+      "sunset",
+      "saturated"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 330,
+        "shadows-amount": 0.2,
+        "midtones-hue": 25,
+        "midtones-amount": 0.4,
+        "highlights-hue": 40,
+        "highlights-amount": 0.45,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "s-curve",
+      "params": {
+        "amount": 0.3
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "saturation": 1.3
+      }
+    },
+    {
+      "tool": "halation",
+      "params": {
+        "amount": 0.7,
+        "threshold": 0.9,
+        "size": 0.9
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    },
+    {
+      "tool": "lens-vignette",
+      "params": {
+        "amount": -1.0
+      }
+    }
+  ]
+}

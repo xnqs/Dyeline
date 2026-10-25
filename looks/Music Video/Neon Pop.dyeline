@@ -1,0 +1,63 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Neon Pop",
+    "tags": [
+      "vivid",
+      "magenta",
+      "night"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "exposure",
+      "params": {
+        "stops": -0.3
+      }
+    },
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 270,
+        "shadows-amount": 0.4,
+        "midtones-hue": 320,
+        "midtones-amount": 0.2,
+        "highlights-hue": 180,
+        "highlights-amount": 0.2,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "s-curve",
+      "params": {
+        "amount": 0.3
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "saturation": 1.3
+      }
+    },
+    {
+      "tool": "halation",
+      "params": {
+        "amount": 0.8,
+        "threshold": 0.7,
+        "size": 1.0,
+        "tint-red": 1.0,
+        "tint-green": 0.2,
+        "tint-blue": 0.6
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    }
+  ]
+}

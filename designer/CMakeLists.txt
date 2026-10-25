@@ -8,7 +8,8 @@ option(DYELINE_BUILD_DESIGNER "Build the Look Designer app (needs SDL3 and Dear 
 set(designer_output_dir "${DYELINE_BUNDLE_DIR}/Contents/${DYELINE_OFX_ARCH}$<0:>")
 
 # The editing model, shared by the app and its tests.
-add_library(dyeline_designer_model STATIC src/look_editor.cpp src/preview.cpp src/scopes.cpp)
+add_library(dyeline_designer_model STATIC src/look_editor.cpp src/preview.cpp src/scopes.cpp
+    src/thumbnails.cpp)
 target_include_directories(dyeline_designer_model PUBLIC src)
 target_link_libraries(dyeline_designer_model PUBLIC Dyeline::core)
 dyeline_set_warnings(dyeline_designer_model)

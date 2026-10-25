@@ -170,6 +170,12 @@ void LookEditor::set_name(const std::string& name) {
     look_.meta.name = name;
 }
 
+void LookEditor::apply_preset(const Look& preset) {
+    checkpoint({});
+    look_.meta = preset.meta;
+    look_.chain = preset.chain;
+}
+
 void LookEditor::set_color(const LookColor& color) {
     if (look_.color.mode == color.mode && look_.color.input == color.input &&
         look_.color.output == color.output) {

@@ -1,0 +1,47 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Cold Open",
+    "tags": [
+      "cool",
+      "winter",
+      "clean"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 210,
+        "shadows-amount": 0.2,
+        "midtones-hue": 200,
+        "midtones-amount": 0.2,
+        "highlights-hue": 200,
+        "highlights-amount": 0.15,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "shadows-highlights",
+      "params": {
+        "shadows": 0.2,
+        "highlights": 0.1
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "saturation": 0.85
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    }
+  ]
+}

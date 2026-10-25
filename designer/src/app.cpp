@@ -7,11 +7,15 @@
 #include <cstdint>
 #include <memory>
 #include <cstdio>
+#include <filesystem>
+#include <map>
+#include <set>
 #include <mutex>
 #include <string>
 #include <vector>
 
 #include "dyeline/color.h"
+#include "dyeline/library.h"
 #include "dyeline/tools.h"
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
@@ -19,6 +23,7 @@
 #include "imgui_stdlib.h"
 #include "preview.h"
 #include "scopes.h"
+#include "thumbnails.h"
 
 namespace dyeline::designer {
 
@@ -136,6 +141,9 @@ public:
         if (preview_ != nullptr) {
             preview_->wait_idle();
         }
+        if (thumbnails_ != nullptr) {
+            thumbnails_->wait_idle();
+        }
     }
 
     // Draws one frame. Returns false once the user has applied or closed.
@@ -146,6 +154,12 @@ public:
 private:
     void draw_header();
     void draw_chain(float width);
+    void draw_looks();
+    void draw_look_cell(const LibraryLook& entry, float width);
+    void scan_looks();
+    void request_thumbnails();
+    void save_to_library(bool replace);
+    void toggle_favorite(const std::string& key);
     void draw_tool();
     void draw_preview(float height);
     void request_preview(bool allow_draft);
@@ -172,6 +186,19 @@ private:
     bool requested_draft_ = false;
     bool show_original_ = false;
     bool show_scopes_ = true;
+    // The looks browser: the library, scanned when the Looks tab is first shown, and a
+    // thumbnail of each look on the current frame, rendered with the look's color settings.
+    std::vector<LibraryLook> library_;
+    bool library_scanned_ = false;
+    std::string library_status_;
+    std::set<std::string> favorites_;
+    std::string search_;
+    bool favorites_only_ = false;
+    std::unique_ptr<ThumbnailWorker> thumbnails_;
+    std::map<std::string, std::unique_ptr<Texture>> thumbnail_textures_;
+    LookColor thumbnails_color_;
+    bool thumbnails_requested_ = false;
+    bool open_replace_prompt_ = false;
     int view_ = 0;  // 0 auto, 1 as is, 2 linear to sRGB
     std::size_t selected_ = 0;
     std::string status_;
@@ -198,7 +225,18 @@ bool App::frame() {
     const float body = ImGui::GetContentRegionAvail().y - footer;
     const float chain_width = std::max(220.0f, ImGui::GetContentRegionAvail().x * 0.3f);
     ImGui::BeginChild("chain", ImVec2(chain_width, body), ImGuiChildFlags_Borders);
-    draw_chain(chain_width);
+    if (ImGui::BeginTabBar("left")) {
+        if (ImGui::BeginTabItem("Chain")) {
+            draw_chain(chain_width);
+            ImGui::EndTabItem();
+        }
+        const bool open_looks = options_.test_looks && ImGui::GetFrameCount() <= 1;
+        if (ImGui::BeginTabItem("Looks", nullptr, open_looks ? ImGuiTabItemFlags_SetSelected : 0)) {
+            draw_looks();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginGroup();
@@ -295,7 +333,6 @@ void App::draw_header() {
 }
 
 void App::draw_chain(float width) {
-    ImGui::TextDisabled("CHAIN");
     const Look& look = editor_.look();
     if (look.chain.empty()) {
         ImGui::TextWrapped("No tools yet. Add one below.");
@@ -401,6 +438,242 @@ void App::draw_chain(float width) {
         }
         ImGui::EndPopup();
     }
+}
+
+void App::scan_looks() {
+    std::vector<LibraryRoot> roots;
+    if (const char* base = SDL_GetBasePath()) {
+        // The designer sits in Contents/<arch>/ of the plugin bundle, the looks in
+        // Contents/Resources/looks.
+        roots.push_back({(std::filesystem::u8path(base) / ".." / "Resources" / "looks").lexically_normal().u8string(),
+                         true});
+    }
+    roots.push_back({user_looks_dir(), false});
+    std::vector<std::string> problems;
+    library_ = scan_library(roots, problems);
+    library_status_ = problems.empty() ? std::string() : "Skipped: " + problems.front();
+    favorites_ = read_favorites(favorites_path());
+    library_scanned_ = true;
+    thumbnails_requested_ = false;
+}
+
+void App::request_thumbnails() {
+    if (thumbnails_ == nullptr) {
+        thumbnails_ = std::make_unique<ThumbnailWorker>(
+            options_.frame != nullptr ? *options_.frame : sample_frame(kThumbnailWidth * 2, kThumbnailHeight * 2));
+    }
+    const LookColor& color = editor_.look().color;
+    if (thumbnails_requested_ && color.mode == thumbnails_color_.mode &&
+        color.input == thumbnails_color_.input && color.output == thumbnails_color_.output) {
+        return;
+    }
+    thumbnails_requested_ = true;
+    thumbnails_color_ = color;
+    std::vector<ThumbnailJob> jobs;
+    for (const LibraryLook& entry : library_) {
+        Look look = preset_for_editing(entry);
+        look.color = color;
+        jobs.push_back({entry.key, std::move(look), std::string()});
+    }
+    thumbnails_->request(std::move(jobs));
+}
+
+void App::toggle_favorite(const std::string& key) {
+    if (favorites_.erase(key) == 0) {
+        favorites_.insert(key);
+    }
+    std::string error;
+    if (!write_favorites(favorites_path(), favorites_, error)) {
+        library_status_ = "Couldn't save favorites: " + error;
+    }
+}
+
+void App::save_to_library(bool replace) {
+    const std::string dir = user_looks_dir();
+    if (dir.empty()) {
+        library_status_ = "Couldn't save: no home folder";
+        return;
+    }
+    const std::filesystem::path path =
+        std::filesystem::u8path(dir) / std::filesystem::u8path(look_file_name(editor_.look().meta.name));
+    std::error_code ec;
+    if (!replace && std::filesystem::exists(path, ec)) {
+        open_replace_prompt_ = true;
+        return;
+    }
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::string error;
+    if (!write_look_file(path.u8string(), editor_.look(), error)) {
+        library_status_ = "Couldn't save: " + error;
+        return;
+    }
+    scan_looks();
+    library_status_ = "Saved to " + path.u8string();
+}
+
+void App::draw_looks() {
+    if (!library_scanned_) {
+        scan_looks();
+    }
+    request_thumbnails();
+    for (auto& [key, image] : thumbnails_->take()) {
+        auto& texture = thumbnail_textures_[key];
+        if (texture == nullptr) {
+            texture = std::make_unique<Texture>(renderer_);
+        }
+        texture->update(image);
+    }
+
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##search", "Search names and tags", &search_);
+    ImGui::Checkbox("Favorites only", &favorites_only_);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Refresh")) {
+        scan_looks();
+    }
+    ImGui::SetItemTooltip("Look for new or changed look files");
+    if (ImGui::Button("Save to my looks")) {
+        save_to_library(false);
+    }
+    ImGui::SetItemTooltip("Save the look being edited into your own looks, under its name");
+    ImGui::SameLine();
+    if (ImGui::Button("Open folder")) {
+        std::error_code ec;
+        std::filesystem::create_directories(std::filesystem::u8path(user_looks_dir()), ec);
+        const std::string path = std::filesystem::u8path(user_looks_dir()).generic_u8string();
+        const std::string url = (path.rfind('/', 0) == 0 ? "file://" : "file:///") + path;
+        SDL_OpenURL(url.c_str());
+    }
+    ImGui::SetItemTooltip("Your looks are in %s. Subfolders show as groups here.", user_looks_dir().c_str());
+    if (!library_status_.empty()) {
+        ImGui::TextWrapped("%s", library_status_.c_str());
+    }
+
+    if (open_replace_prompt_) {
+        ImGui::OpenPopup("Replace look?");
+        open_replace_prompt_ = false;
+    }
+    if (ImGui::BeginPopupModal("Replace look?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Your looks already have one called \"%s\".", editor_.look().meta.name.c_str());
+        if (ImGui::Button("Replace")) {
+            save_to_library(true);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    ImGui::Separator();
+    ImGui::BeginChild("looks");
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float avail = ImGui::GetContentRegionAvail().x;
+    const float min_cell = 120.0f * style.FontScaleDpi;
+    const int columns = std::max(1, static_cast<int>((avail + style.ItemSpacing.x) / (min_cell + style.ItemSpacing.x)));
+    const float cell = (avail - style.ItemSpacing.x * static_cast<float>(columns - 1)) / static_cast<float>(columns);
+    bool any = false;
+    std::string group;
+    bool group_open = false;
+    int column = 0;
+    for (std::size_t i = 0; i < library_.size(); ++i) {
+        const LibraryLook& entry = library_[i];
+        if ((favorites_only_ && favorites_.count(entry.key) == 0) || !library_match(entry, search_)) {
+            continue;
+        }
+        any = true;
+        const std::string name = (entry.bundled ? std::string() : std::string("My looks")) +
+                                 (!entry.bundled && !entry.folder.empty() ? " / " : "") +
+                                 (entry.folder.empty() && entry.bundled ? std::string("Looks") : entry.folder);
+        if (name != group || i == 0) {
+            group = name;
+            column = 0;
+            group_open = ImGui::CollapsingHeader((group + "##" + (entry.bundled ? "b" : "u")).c_str(),
+                                                 ImGuiTreeNodeFlags_DefaultOpen);
+        }
+        if (!group_open) {
+            continue;
+        }
+        if (column > 0) {
+            ImGui::SameLine();
+        }
+        draw_look_cell(entry, cell);
+        column = (column + 1) % columns;
+    }
+    if (!any) {
+        ImGui::TextWrapped(library_.empty() ? "No looks found. Saved looks appear here."
+                                            : "No looks match.");
+    }
+    ImGui::EndChild();
+}
+
+void App::draw_look_cell(const LibraryLook& entry, float width) {
+    ImGui::PushID(entry.key.c_str());
+    const Frame& frame = thumbnails_->frame();
+    const float aspect = (static_cast<float>(frame.width) * frame.canonical_x) /
+                         (static_cast<float>(frame.height) * frame.canonical_y);
+    const float image_height = width / aspect;
+    const float text_height = ImGui::GetTextLineHeightWithSpacing();
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    if (ImGui::InvisibleButton("look", ImVec2(width, image_height + text_height))) {
+        editor_.apply_preset(preset_for_editing(entry));
+        selected_ = 0;
+        status_ = "Applied " + entry.look.meta.name;
+    }
+    const bool hovered = ImGui::IsItemHovered();
+    if (ImGui::BeginItemTooltip()) {
+        ImGui::TextUnformatted(entry.look.meta.name.c_str());
+        std::string tags;
+        for (const std::string& tag : entry.look.meta.tags) {
+            tags += (tags.empty() ? "" : ", ") + tag;
+        }
+        if (!tags.empty()) {
+            ImGui::TextDisabled("%s", tags.c_str());
+        }
+        ImGui::TextDisabled("Click to apply. Right-click for favorites.");
+        ImGui::EndTooltip();
+    }
+    const bool favorite = favorites_.count(entry.key) != 0;
+    if (ImGui::BeginPopupContextItem("look-menu")) {
+        if (ImGui::MenuItem("Apply")) {
+            editor_.apply_preset(preset_for_editing(entry));
+            selected_ = 0;
+        }
+        if (ImGui::MenuItem(favorite ? "Remove from favorites" : "Add to favorites")) {
+            toggle_favorite(entry.key);
+        }
+        ImGui::EndPopup();
+    }
+
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const ImVec2 image_end(at.x + width, at.y + image_height);
+    const auto texture = thumbnail_textures_.find(entry.key);
+    if (texture != thumbnail_textures_.end() && texture->second->ready()) {
+        draw->AddImage(texture->second->ref(), at, image_end);
+    } else {
+        draw->AddRectFilled(at, image_end, ImGui::GetColorU32(ImGuiCol_FrameBg));
+    }
+    if (hovered) {
+        draw->AddRect(at, image_end, ImGui::GetColorU32(ImGuiCol_ButtonHovered), 0.0f, 2.0f);
+    }
+    if (favorite) {
+        // A small star in the top right corner.
+        const float radius = 7.0f * ImGui::GetStyle().FontScaleDpi;
+        const ImVec2 center(image_end.x - radius - 4.0f, at.y + radius + 4.0f);
+        ImVec2 points[10];
+        for (int k = 0; k < 10; ++k) {
+            const float angle = -1.5707963f + static_cast<float>(k) * 0.6283185f;
+            const float r = k % 2 == 0 ? radius : radius * 0.45f;
+            points[k] = ImVec2(center.x + std::cos(angle) * r, center.y + std::sin(angle) * r);
+        }
+        draw->AddConcavePolyFilled(points, 10, IM_COL32(255, 200, 60, 255));
+    }
+    const ImVec4 clip(at.x, image_end.y, at.x + width, image_end.y + text_height);
+    draw->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+                  ImVec2(at.x + 2.0f, image_end.y + ImGui::GetStyle().ItemSpacing.y * 0.5f),
+                  ImGui::GetColorU32(ImGuiCol_Text), entry.look.meta.name.c_str(), nullptr, 0.0f, &clip);
+    ImGui::PopID();
 }
 
 void App::draw_tool() {

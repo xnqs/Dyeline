@@ -1,0 +1,50 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Red Filter Mono",
+    "tags": [
+      "mono",
+      "black and white",
+      "dramatic sky"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "exposure",
+      "params": {
+        "stops": -0.35
+      }
+    },
+    {
+      "tool": "black-white",
+      "params": {
+        "red": 0.75,
+        "green": 0.25,
+        "blue": 0.0
+      }
+    },
+    {
+      "tool": "s-curve",
+      "params": {
+        "amount": 0.35
+      }
+    },
+    {
+      "tool": "grain",
+      "params": {
+        "amount": 0.25,
+        "size": 1.3,
+        "color": 0.0
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    }
+  ]
+}

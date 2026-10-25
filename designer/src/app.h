@@ -22,6 +22,8 @@ struct AppOptions {
     bool round_trip = false;
     // For tests: draw this many frames, then act as if Apply (or Save) was pressed.
     int test_frames = 0;
+    // For tests: opens on the Looks tab.
+    bool test_looks = false;
     // For tests: saves the last frame drawn as a .bmp.
     std::string test_screenshot;
 };

@@ -1,0 +1,60 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Dream Glow",
+    "tags": [
+      "soft",
+      "glow",
+      "pastel"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "exposure",
+      "params": {
+        "stops": 0.2
+      }
+    },
+    {
+      "tool": "diffusion",
+      "params": {
+        "amount": 0.6,
+        "size": 2.5,
+        "highlights": 0.4
+      }
+    },
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 280,
+        "shadows-amount": 0.15,
+        "midtones-hue": 340,
+        "midtones-amount": 0.15,
+        "highlights-hue": 40,
+        "highlights-amount": 0.2,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "contrast",
+      "params": {
+        "contrast": 0.85
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "saturation": 0.9
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Classic Mono",
+    "tags": [
+      "mono",
+      "black and white",
+      "film"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "black-white",
+      "params": {}
+    },
+    {
+      "tool": "s-curve",
+      "params": {
+        "amount": 0.3
+      }
+    },
+    {
+      "tool": "grain",
+      "params": {
+        "amount": 0.3,
+        "size": 1.4,
+        "color": 0.0
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    }
+  ]
+}

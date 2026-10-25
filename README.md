@@ -13,7 +13,8 @@ provides one. The tools so far are Exposure, Contrast, S Curve, Hue/Saturation, 
 Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade, LUT, Lens Vignette, Grain,
 Diffusion Filter and Halation (see
 [docs/tools.md](docs/tools.md)). The Look Designer edits the chain, the tools and the color
-settings, with a preview of the host's current frame and its scopes. It is not useful for real work yet.
+settings, with a preview of the host's current frame, its scopes, and a looks browser with 20
+bundled looks. It is not useful for real work yet.
 
 ## Looks
 
@@ -97,6 +98,13 @@ The bundle ships `dyeline-designer` next to the plugin binary: a window for edit
 - **Scopes** (beside the preview, toggled with the checkbox or the S key): an RGB parade, and
   a vectorscope with the 75% color bar targets and the skin tone line. Both read the preview
   as it is shown on screen.
+- **Looks** (the left pane's second tab): the bundled looks, grouped by mood, and your own,
+  each as a thumbnail of the current frame. Click one to apply it; it replaces the chain and
+  name but keeps your color settings, and Undo takes it back. Search matches names, tags and
+  folders. Right-click a look to add it to your favorites. **Save to my looks** keeps the
+  look being edited in your own folder (Linux `~/.local/share/dyeline/looks`, macOS
+  `~/Library/Application Support/Dyeline/looks`, Windows `%APPDATA%\Dyeline\looks`), where
+  subfolders show as groups. See [looks/README.md](looks/README.md) for the bundled set.
 - **Tool** (bottom right): the selected tool's Strength and parameters. Double-click a control,
   or right-click it, to put it back to its default.
 - **Top bar**: the look's name and its color settings (see [docs/color.md](docs/color.md)).

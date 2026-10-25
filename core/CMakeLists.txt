@@ -4,6 +4,7 @@ add_library(dyeline_core STATIC
     src/cube.cpp
     src/designer_link.cpp
     src/frame_file.cpp
+    src/library.cpp
     src/look.cpp
     src/paths.cpp
     src/render.cpp
