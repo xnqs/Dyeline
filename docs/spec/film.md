@@ -45,3 +45,21 @@ layer makes the print denser in that layer's dye.
 - ACEScg primaries and white point: the ACES specification (S-2014-004).
 - The ISO speed's grey card exposure and the 0.6 negative gamma: published sensitometry
   practice, the same values spectral_film_lut uses.
+
+# Bleach Bypass, 2-Strip and Telecine Net: behavior spec
+
+**Bleach Bypass** models the silver retained when the bleach step is skipped as a neutral
+density image of the picture's luminance laid over its dyes: each pixel is scaled in every
+channel by (Y / pivot)^(amount / 2), and colors move toward Y by 0.65 * amount. Sources: the
+published descriptions of the skip-bleach process (silver retention adds a black-and-white
+image, raising contrast and lowering saturation) in Kodak's processing literature and standard
+cinematography texts.
+
+**2-Strip** keeps red and replaces green and blue with their average, the two records of the
+two-color subtractive process (red and green-blue). Source: histories of the two-color
+Technicolor process.
+
+**Telecine Net** spreads an equal share of every tone's light over a wide area (Diffusion's
+model with no highlight weighting), as a net in the light path scatters light. Source: the
+optics of nets and diffusion: scattered light lifts shadows and lowers contrast while
+conserving the total.

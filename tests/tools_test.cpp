@@ -50,7 +50,8 @@ bool skipped(const ToolEntry& entry) {
 TEST(Tools, AllAreRegistered) {
     for (const char* id : {"exposure", "contrast", "s-curve", "hue-saturation", "black-white",
                            "channel-mixer", "shadows-highlights", "highlight-shoulder", "three-way", "lut",
-                           "lens-vignette", "grain", "diffusion", "halation", "film-negative", "film-print"}) {
+                           "lens-vignette", "grain", "diffusion", "halation", "film-negative", "film-print", "bleach-bypass", "two-strip",
+                           "telecine-net"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }
@@ -563,6 +564,34 @@ TEST(Film, NegativeThenPrintKeepsGreyNeutral) {
     for (int k = 0; k < 3; ++k) {
         EXPECT_NEAR(out[k], 0.18f, 0.005f);
     }
+}
+
+TEST(BleachBypass, KeepsGreyAddsContrastAndTakesColor) {
+    const ToolEntry bypass = tool("bleach-bypass", {{"amount", 1.0}});
+    const auto mid = run(bypass, grey(0.18f));
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_NEAR(mid[k], 0.18f, 1e-5f);
+    }
+    // Luminance contrast 1.5: a stop over grey comes out a stop and a half over.
+    EXPECT_NEAR(std::log2(luma(run(bypass, grey(0.36f))) / 0.18f), 1.5f, 1e-4f);
+    EXPECT_NEAR(std::log2(luma(run(bypass, grey(0.09f))) / 0.18f), -1.5f, 1e-4f);
+    // A color keeps 35% of its difference from its luminance (scaled by the silver).
+    const std::vector<float> red = {0.3f, 0.12f, 0.1f, 1.0f};
+    const auto out = run(bypass, red);
+    const float factor = luma(out) / luma(red);
+    EXPECT_NEAR((out[0] - out[1]) / factor, 0.35f * (red[0] - red[1]), 1e-4f);
+    EXPECT_TRUE(skipped(tool("bleach-bypass", {{"amount", 0.0}})));
+}
+
+TEST(TwoStrip, KeepsRedAndAveragesGreenAndBlue) {
+    const auto out = run(tool("two-strip", {}), {0.4f, 0.2f, 0.6f, 1.0f});
+    EXPECT_NEAR(out[0], 0.4f, 1e-6f);
+    EXPECT_NEAR(out[1], 0.4f, 1e-6f);
+    EXPECT_NEAR(out[2], 0.4f, 1e-6f);
+    const auto half = run(tool("two-strip", {{"amount", 0.5}}), {0.4f, 0.2f, 0.6f, 1.0f});
+    EXPECT_NEAR(half[1], 0.3f, 1e-6f);
+    EXPECT_NEAR(half[2], 0.5f, 1e-6f);
+    EXPECT_TRUE(skipped(tool("two-strip", {{"amount", 0.0}})));
 }
 
 }  // namespace

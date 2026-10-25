@@ -85,7 +85,7 @@ inline CompiledChain test_chain() {
     add("shadows-highlights", 1.0, {{"shadows", 0.8}, {"highlights", -0.6}});
     add("channel-mixer", 0.6, {{"red-from-green", 0.2}, {"blue-from-blue", 0.9}});
     add("highlight-shoulder", 1.0, {{"start", 0.9}, {"headroom", 1.2}});
-    add("black-white", 0.3, {{"red", 0.5}, {"green", 0.4}, {"blue", 0.1}});
+    add("bleach-bypass", 0.7, {{"amount", 0.8}, {"pivot", 0.25}});
     add("three-way", 0.8, {{"shadows-hue", 210.0}, {"shadows-amount", 0.7},
                            {"midtones-hue", 30.0}, {"midtones-amount", 0.3},
                            {"highlights-hue", 60.0}, {"highlights-amount", 0.5}});

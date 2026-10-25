@@ -181,6 +181,29 @@ The stocks' curves and spectra are datasheet values digitized by the spectral_fi
 [core/film_data](../core/film_data/README.md) says where each comes from and how the tables are
 built. Both tools depend only on a pixel's color, so `.cube` export keeps them.
 
+## Bleach Bypass (`bleach-bypass`)
+
+Skipping the bleach step in the lab leaves the film's silver in place beside its dyes. The silver
+is a black-and-white copy of the image laid over the color one, so the image loses color and
+gains contrast, with denser blacks. Every channel of a pixel darkens or brightens by the same
+factor, set by its luminance, so grey at the pivot stays put; at Amount 1, one stop over the
+pivot comes out a stop and a half over, and colors keep 35% of their difference from grey.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 0.7 | 0 to 1 | How much silver is kept. |
+| `pivot` | 0.18 | 0.001 to 10 | The scene-linear value the contrast turns around. |
+
+## 2-Strip (`two-strip`)
+
+The early two-color process, which recorded only a red and a green-blue record: red stays and
+green and blue both become their average, so the image holds only red-oranges and
+cyan-greens, with no true blues, yellows or purples.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 1 | 0 to 1 | Mix from the original (0) to the full process (1). |
+
 ## Lens Vignette (`lens-vignette`)
 
 Darkens the frame toward its edges, the way a lens loses light away from its center, or
@@ -224,6 +247,18 @@ resolution and render scale.
 | `amount` | 0.5 | 0 to 1 | How much of the blurred copy is mixed in. |
 | `size` | 1 | 0.05 to 10 | Blur size, in percent of the frame's width. |
 | `highlights` | 0.5 | 0 to 1 | At 0 every tone spreads alike; at 1 mostly highlights spread. |
+
+## Telecine Net (`telecine-net`)
+
+A fine net stretched in the light path, behind the lens or in the telecine, scatters a share of
+every pixel's light evenly over a wide area. Shadows beside bright areas lift and contrast
+softens across the frame, while the frame's total light stays the same. It works like
+Diffusion Filter with every tone scattering alike. Size is a fraction of the frame's width.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 0.3 | 0 to 1 | The share of light the net scatters. |
+| `size` | 4 | 0.5 to 10 | How far it scatters, in percent of the frame's width. |
 
 ## Halation (`halation`)
 

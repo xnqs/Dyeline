@@ -161,6 +161,26 @@ TEST(Diffusion, LeavesAnEvenImageAloneAndSoftensEdges) {
     EXPECT_NEAR(at(out, w, 0, 10, 1), 0.02f, 0.01f);  // far from the edge, nearly untouched
 }
 
+TEST(TelecineNet, LiftsShadowsBesideHighlightsAndKeepsTheTotal) {
+    const CompiledChain chain = compile({tool("telecine-net", {{"amount", 0.5}, {"size", 8.0}})});
+    const int w = 40;
+    const int h = 20;
+    std::vector<float> edge(static_cast<std::size_t>(w) * h * 3);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            for (int k = 0; k < 3; ++k) {
+                edge[(static_cast<std::size_t>(y) * w + x) * 3 + k] = x < w / 2 ? 0.01f : 2.0f;
+            }
+        }
+    }
+    const std::vector<float> out = render(chain, frame_geometry(w, h), edge);
+    // Unlike Diffusion's default, shadows scatter as much as highlights, so the dark side
+    // lifts well beyond its own level and the bright side loses light.
+    EXPECT_GT(at(out, w, w / 2 - 2, 10, 1), 0.2f);
+    EXPECT_LT(at(out, w, w / 2 + 1, 10, 1), 2.0f);
+    EXPECT_TRUE(compile({tool("telecine-net", {{"amount", 0.0}})}).pass.count == 0);
+}
+
 TEST(Halation, GlowsWarmAroundHighlightsOnly) {
     const CompiledChain chain =
         compile({tool("halation", {{"amount", 1.0}, {"threshold", 1.0}, {"size", 5.0}})});

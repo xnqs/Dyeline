@@ -126,7 +126,7 @@ input to the camera's log space first: a LUT from a linear input cuts off everyt
 than white.
 
 A LUT can only map one color to another, so tools that depend on where a pixel is or on its
-neighbors are left out: **Lens Vignette**, **Grain**, **Diffusion Filter** and **Halation**.
+neighbors are left out: **Lens Vignette**, **Grain**, **Diffusion Filter**, **Telecine Net** and **Halation**.
 The export dialog lists what will be left out, and the file's header names it.
 
 ## Look files
@@ -232,7 +232,7 @@ a Mac and OpenCL elsewhere, and copies the frame there and back. Without a GPU i
 the CPU. On Linux, install your GPU's OpenCL driver: for AMD and Intel, `mesa-opencl-icd`. With
 Mesa's newer Rusticl driver, also set `RUSTICL_ENABLE=radeonsi` (AMD) or `RUSTICL_ENABLE=iris`
 (Intel) before starting the host. If a GPU fails, Dyeline prints why to the host's terminal
-and renders the rest of the session on the CPU. The glow tools (Diffusion Filter, Halation)
+and renders the rest of the session on the CPU. The glow tools (Diffusion Filter, Telecine Net, Halation)
 cost the most; bypass them while you work.
 
 **macOS won't open the installer**: it isn't signed yet. Right-click the `.pkg`, choose
