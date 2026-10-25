@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -44,6 +45,20 @@ constexpr const char* kParamLookFileReload = "lookFileReload";
 constexpr const char* kParamLook = "look";
 constexpr const char* kParamLookRevision = "lookRevision";
 constexpr const char* kParamDesignerStatus = "designerStatus";
+
+// Expands a leading "~" to the home folder, since a path typed into a host's text field
+// doesn't go through a shell.
+std::string expand_home(const std::string& path) {
+    if (path.empty() || path[0] != '~' || (path.size() > 1 && path[1] != '/' && path[1] != '\\')) {
+        return path;
+    }
+#ifdef _WIN32
+    const char* home = std::getenv("USERPROFILE");
+#else
+    const char* home = std::getenv("HOME");
+#endif
+    return home != nullptr && home[0] != '\0' ? std::string(home) + path.substr(1) : path;
+}
 
 // A parsed look, or why it couldn't be read.
 struct LoadedLook {
@@ -225,7 +240,7 @@ private:
         std::string file;
         look_file_->getValueAtTime(time, file);
         if (!file.empty()) {
-            return cache_.from_file(file);
+            return cache_.from_file(expand_home(file));
         }
         std::string text;
         look_->getValueAtTime(time, text);
@@ -286,7 +301,7 @@ private:
         look_->getValueAtTime(time, text);
         std::vector<std::string> args;
         if (!file.empty()) {
-            args = {"--file", file};
+            args = {"--file", expand_home(file)};
         }
         const dyeline::designer::RoundTrip trip =
             dyeline::designer::run(dyeline::plugin::designer_path(),
