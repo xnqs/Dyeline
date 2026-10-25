@@ -55,7 +55,8 @@ inline RenderGeometry window_geometry(int width, int height) {
 }
 
 // A look using every tool at partial strengths, under a partial overall strength, so each
-// tool's math, op order and both blends run on the GPU. Two spatial tools, with per-pixel
+// tool's math, op order and both blends run on the GPU. It converts sRGB in to LogC4 out
+// with full color management, so both transforms and their matrices run too. Two spatial tools, with per-pixel
 // tools between them, check that each blur sees the chain up to its own tool.
 inline CompiledChain test_chain() {
     // A curved 3D LUT under LUT Gamma 2, with the frame's values reaching past its domain.
@@ -66,6 +67,9 @@ inline CompiledChain test_chain() {
                        }),
                        ".cube");
     Look look;
+    look.color.mode = "full";
+    look.color.input = "srgb";
+    look.color.output = "logc4";
     auto add = [&](const char* id, double strength, nlohmann::json params) {
         ToolEntry entry;
         entry.tool = id;

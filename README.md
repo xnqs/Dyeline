@@ -24,7 +24,7 @@ keeps the same JSON in a hidden parameter, so a preset and a clip's grade are on
 {
   "formatVersion": 1,
   "meta": {"name": "Brighter", "tags": [], "author": "", "license": "CC-BY-4.0"},
-  "color": {"mode": "tone", "input": "rec709", "output": "same"},
+  "color": {"mode": "tone", "input": "linear", "output": "same"},
   "chain": [
     {"tool": "exposure", "toolVersion": 1, "enabled": true, "pinned": false, "strength": 1.0,
      "params": {"stops": 1.0}}
@@ -35,6 +35,10 @@ keeps the same JSON in a hidden parameter, so a preset and a clip's grade are on
 Each tool versions its own parameters, so old looks keep loading as tools change. A tool this
 build doesn't know (or a newer version of one) is kept in the look and bypassed, with a warning,
 never dropped. In the host, **Strength** blends the whole look with the untouched image.
+
+The `color` settings say what space the footage is in and what to output; tools always work on
+scene-linear ACEScg. The defaults change nothing, which suits Natron and Nuke. See
+[docs/color.md](docs/color.md) for the modes and the built-in camera spaces.
 
 ## Hosts
 

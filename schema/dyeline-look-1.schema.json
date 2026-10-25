@@ -23,7 +23,7 @@
       "type": "object",
       "properties": {
         "mode": {"enum": ["tone", "full"], "default": "tone"},
-        "input": {"type": "string", "default": "rec709", "description": "The footage's color space."},
+        "input": {"type": "string", "default": "linear", "description": "The footage's color space, such as \"rec709\" or \"logc3\" (see docs/color.md)."},
         "output": {"type": "string", "default": "same", "description": "The color space to output; \"same\" means the input space."}
       }
     },

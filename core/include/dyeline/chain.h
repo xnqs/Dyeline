@@ -21,6 +21,9 @@ struct CompiledChain {
     std::vector<std::string> problems;
     // Data the pass reads besides its ops, such as LUT tables (see chain_kernel.h).
     std::vector<float> table;
+    // True when the output transform undoes the input transform, so the pass changes nothing
+    // without its tools.
+    bool color_round_trips = true;
 
     // True when the chain has a tool that reads neighboring pixels.
     bool has_spatial() const {
@@ -33,10 +36,13 @@ struct CompiledChain {
     }
 
     // True when rendering would leave every pixel unchanged.
-    bool is_identity() const { return pass.count == 0 || pass.strength == 0.0f; }
+    bool is_identity() const {
+        return (pass.count == 0 || pass.strength == 0.0f) && color_round_trips;
+    }
 };
 
-// Compiles `look` with an overall `strength` (0 to 1). Disabled tools and tools whose settings
+// Compiles `look` with an overall `strength` (0 to 1), including its color transforms; if
+// those can't be built, the look renders without them and `problems` says why. Disabled tools and tools whose settings
 // change nothing are left out. Relative file paths in the look, such as a LUT's, are resolved
 // against `base_dir` when it is set. Fails, with `error` set, when more than DL_MAX_OPS tools
 // are active.

@@ -15,6 +15,7 @@
 #define DYELINE_KERNELS_CHAIN_KERNEL_H
 
 #include "dl_kernel.h"
+#include "tools/color_space.h"
 #include "tools/contrast.h"
 #include "tools/diffusion.h"
 #include "tools/exposure.h"
@@ -59,10 +60,14 @@ struct dl_op {
     float p[DL_OP_PARAMS];
 };
 
-// The whole pass. `strength` blends between the untouched image and the chain's result.
+// The whole pass. `input` brings each pixel into the working space and `output` takes the
+// result to the output space (see tools/color_space.h). `strength` blends, in the working
+// space, between the untouched image and the tools' result.
 struct dl_chain {
     int count;
     float strength;
+    struct dl_transform input;
+    struct dl_transform output;
     struct dl_op ops[DL_MAX_OPS];
 };
 
@@ -230,9 +235,10 @@ DL_DEVICE void dl_chain_at(DL_GLOBAL const float* src, DL_GLOBAL float* dst, int
     }
     struct dl_place at;
     int unpremultiplied = 0;
-    const dl_float4 original = dl_read_source(src, x, y, a, &at, &unpremultiplied);
+    const dl_float4 original =
+        dl_apply_transform(dl_read_source(src, x, y, a, &at, &unpremultiplied), &chain->input);
     dl_float4 c = dl_run_ops(original, chain, chain->count, table, work, at);
-    c = dl_mix(original, c, chain->strength);
+    c = dl_apply_transform(dl_mix(original, c, chain->strength), &chain->output);
     if (unpremultiplied) {
         c = dl_make_float4(c.x * c.w, c.y * c.w, c.z * c.w, c.w);
     }
@@ -258,7 +264,8 @@ DL_DEVICE void dl_extract_at(DL_GLOBAL const float* src, DL_GLOBAL float* work, 
     }
     struct dl_place at;
     int unpremultiplied = 0;
-    dl_float4 c = dl_read_source(src, x, y, a, &at, &unpremultiplied);
+    dl_float4 c =
+        dl_apply_transform(dl_read_source(src, x, y, a, &at, &unpremultiplied), &chain->input);
     c = dl_run_ops(c, chain, stop, table, work, at);
     const dl_float4 e = dl_extract_op(c, &chain->ops[stop]);
     work[wi] = e.x * c.w;

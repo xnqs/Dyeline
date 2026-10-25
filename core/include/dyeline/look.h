@@ -20,11 +20,12 @@ struct LookMeta {
     std::string license;
 };
 
-// Color settings. Milestone 1 implements the modes and spaces; for now they are stored and
-// written back as they are.
+// Color settings: the footage's color space, the space to output, and how much to convert
+// (see color.h). The defaults change nothing, which suits hosts that already hand plugins
+// scene-linear images, such as Natron and Nuke.
 struct LookColor {
     std::string mode = "tone";     // "tone" (1D) or "full" (gamut and tone)
-    std::string input = "rec709";
+    std::string input = "linear";  // a color space id from color.h
     std::string output = "same";   // "same" means the input space
 };
 

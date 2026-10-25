@@ -1,6 +1,7 @@
 # Tools
 
-Every tool works on scene-linear RGB and leaves alpha alone. Each one has a **Strength** in the
+Every tool works on scene-linear RGB in the working space, ACEScg (see [color.md](color.md)),
+and leaves alpha alone. Each one has a **Strength** in the
 look (0 to 1) that blends its result with its input. Tool ids are what `.dyeline` files store.
 
 ## Exposure (`exposure`)
