@@ -1,0 +1,60 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Sun Bleached",
+    "tags": [
+      "faded",
+      "bright",
+      "summer"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "exposure",
+      "params": {
+        "stops": 0.35
+      }
+    },
+    {
+      "tool": "contrast",
+      "params": {
+        "contrast": 0.7
+      }
+    },
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 180,
+        "shadows-amount": 0.15,
+        "midtones-hue": 50,
+        "midtones-amount": 0.2,
+        "highlights-hue": 55,
+        "highlights-amount": 0.25,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "saturation": 0.6
+      }
+    },
+    {
+      "tool": "diffusion",
+      "params": {
+        "amount": 0.3,
+        "size": 2.0,
+        "highlights": 0.5
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    }
+  ]
+}

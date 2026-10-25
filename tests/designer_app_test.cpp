@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 
@@ -75,4 +76,20 @@ TEST(DesignerApp, PreviewsTheHostsFrame) {
     ASSERT_EQ(trip.outcome, Outcome::Applied) << trip.error;
     EXPECT_EQ(trip.look, text);
     std::filesystem::remove(std::filesystem::u8path(frame_path));
+}
+
+TEST(DesignerApp, DrawsTheLooksBrowser) {
+    // The user's looks go to a scratch folder, not the home folder.
+    const auto user_dir = std::filesystem::temp_directory_path() / "dyeline_designer_app_user";
+    std::filesystem::remove_all(user_dir);
+#ifdef _WIN32
+    _putenv_s("DYELINE_USER_DIR", user_dir.string().c_str());
+#else
+    setenv("DYELINE_USER_DIR", user_dir.string().c_str(), 1);
+#endif
+    const std::string text = dyeline::write_look(sample_look());
+    const auto trip = dyeline::designer::run(DYELINE_DESIGNER_PATH, text, {"--test-looks", "--test-frames", "3"});
+    ASSERT_EQ(trip.outcome, Outcome::Applied) << trip.error;
+    EXPECT_EQ(trip.look, text);
+    std::filesystem::remove_all(user_dir);
 }

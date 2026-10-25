@@ -1,0 +1,66 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Night Shift",
+    "tags": [
+      "cool",
+      "night",
+      "teal"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "exposure",
+      "params": {
+        "stops": -0.5
+      }
+    },
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 195,
+        "shadows-amount": 0.4,
+        "midtones-hue": 185,
+        "midtones-amount": 0.25,
+        "highlights-hue": 60,
+        "highlights-amount": 0.1,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "contrast",
+      "params": {
+        "contrast": 1.2
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "saturation": 0.8
+      }
+    },
+    {
+      "tool": "grain",
+      "params": {
+        "amount": 0.2,
+        "size": 1.2,
+        "color": 0.2
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    },
+    {
+      "tool": "lens-vignette",
+      "params": {
+        "amount": -1.2
+      }
+    }
+  ]
+}

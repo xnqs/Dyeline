@@ -1,0 +1,65 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Golden Hour",
+    "tags": [
+      "warm",
+      "sun",
+      "soft"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "exposure",
+      "params": {
+        "stops": 0.15
+      }
+    },
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 30,
+        "shadows-amount": 0.15,
+        "midtones-hue": 38,
+        "midtones-amount": 0.35,
+        "highlights-hue": 48,
+        "highlights-amount": 0.4,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "s-curve",
+      "params": {
+        "amount": 0.3
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "saturation": 1.1
+      }
+    },
+    {
+      "tool": "halation",
+      "params": {
+        "amount": 0.4,
+        "threshold": 1.2
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    },
+    {
+      "tool": "lens-vignette",
+      "params": {
+        "amount": -0.6
+      }
+    }
+  ]
+}

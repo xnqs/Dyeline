@@ -10,8 +10,8 @@
 // kExitCancelled. --file edits a look file instead (created with a neutral look if it doesn't
 // exist), which is how hosts like EffectCraft get the look; with --out too, Apply also saves
 // the file. --frame names the host's current frame (see frame_file.h), shown in the preview.
-// --test-frames <n> draws n frames and then applies, and --test-screenshot <file.bmp>
-// saves the last one, for tests.
+// --test-frames <n> draws n frames and then applies, --test-looks opens on the looks
+// browser, and --test-screenshot <file.bmp> saves the last one, for tests.
 
 #include <SDL3/SDL_main.h>
 
@@ -47,6 +47,8 @@ int main(int argc, char* argv[]) {
             frame_path = argv[++i];
         } else if (std::strcmp(argv[i], "--test-frames") == 0 && i + 1 < argc) {
             options.test_frames = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--test-looks") == 0) {
+            options.test_looks = true;
         } else if (std::strcmp(argv[i], "--test-screenshot") == 0 && i + 1 < argc) {
             options.test_screenshot = argv[++i];
         }

@@ -45,6 +45,22 @@ elseif(UNIX)
         "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports.linux")
 endif()
 
+# The bundled looks, in Contents/Resources/looks, where the designer's browser finds them.
+# Copied at build time, so a build folder's bundle works without an install.
+file(GLOB_RECURSE dyeline_bundled_looks CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/looks/*.dyeline")
+set(dyeline_looks_stamp "${CMAKE_CURRENT_BINARY_DIR}/looks.stamp")
+add_custom_command(
+    OUTPUT "${dyeline_looks_stamp}"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${DYELINE_BUNDLE_DIR}/Contents/Resources/looks"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/looks"
+            "${DYELINE_BUNDLE_DIR}/Contents/Resources/looks"
+    COMMAND ${CMAKE_COMMAND} -E touch "${dyeline_looks_stamp}"
+    DEPENDS ${dyeline_bundled_looks}
+    COMMENT "Copying the bundled looks"
+)
+add_custom_target(dyeline_looks ALL DEPENDS "${dyeline_looks_stamp}")
+add_dependencies(dyeline_ofx dyeline_looks)
+
 install(DIRECTORY "${DYELINE_BUNDLE_DIR}" DESTINATION "${DYELINE_OFX_INSTALL_DIR}"
     USE_SOURCE_PERMISSIONS)
 

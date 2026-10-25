@@ -1,0 +1,54 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Hard Mono",
+    "tags": [
+      "mono",
+      "black and white",
+      "contrast"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "exposure",
+      "params": {
+        "stops": -0.3
+      }
+    },
+    {
+      "tool": "black-white",
+      "params": {
+        "red": 0.3,
+        "green": 0.6,
+        "blue": 0.1
+      }
+    },
+    {
+      "tool": "s-curve",
+      "params": {
+        "amount": 0.5
+      }
+    },
+    {
+      "tool": "shadows-highlights",
+      "params": {
+        "shadows": -0.4
+      }
+    },
+    {
+      "tool": "highlight-shoulder",
+      "params": {
+        "start": 1.0,
+        "headroom": 1.5
+      }
+    },
+    {
+      "tool": "lens-vignette",
+      "params": {
+        "amount": -1.0
+      }
+    }
+  ]
+}
