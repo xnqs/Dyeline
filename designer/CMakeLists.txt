@@ -42,6 +42,11 @@ set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
 set(SDL_HIDAPI OFF CACHE BOOL "" FORCE)
 set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
 set(SDL_POWER OFF CACHE BOOL "" FORCE)
+if(APPLE)
+    # macOS renders through Metal and needs no GLES. Without it, SDL's offscreen video driver
+    # (used by the headless tests) no longer insists on loading an EGL library to make a window.
+    set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
+endif()
 FetchContent_Declare(SDL3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
     GIT_TAG release-3.4.16
