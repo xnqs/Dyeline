@@ -1,7 +1,7 @@
-// Stand-in for the Look Designer app, for the Milestone 0 round-trip spike. It has no window:
-// it reads the look the plugin hands over, waits as if the user were editing, raises the
-// look's Exposure tool by one stop (adding one if there is none) and hands the look back. The real designer (Dear ImGui on SDL3) replaces it in
-// Milestone 1 and keeps this command line.
+// A windowless stand-in for the Look Designer, for the round-trip tests and for builds with
+// DYELINE_BUILD_DESIGNER=OFF. It reads the look the plugin hands over, waits as if the user
+// were editing, raises the look's Exposure tool by one stop (adding one if there is none) and
+// hands the look back. It takes the real designer's command line.
 //
 // Usage:
 //   dyeline-designer --in <look.json> --out <look.json> [--file <look.dyeline>]

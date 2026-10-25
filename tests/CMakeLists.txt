@@ -21,14 +21,33 @@ target_link_libraries(dyeline_core_tests PRIVATE Dyeline::core GTest::gtest_main
 dyeline_set_warnings(dyeline_core_tests)
 gtest_discover_tests(dyeline_core_tests)
 
-# The Look Designer round trip, run against the stub designer app.
+# The Look Designer round trip, run against the windowless stand-in designer.
 add_executable(dyeline_designer_tests designer_link_test.cpp)
 target_compile_definitions(dyeline_designer_tests PRIVATE
-    DYELINE_DESIGNER_PATH="$<TARGET_FILE:dyeline_designer>")
+    DYELINE_DESIGNER_PATH="$<TARGET_FILE:dyeline_designer_stub>")
 target_link_libraries(dyeline_designer_tests PRIVATE Dyeline::core GTest::gtest_main)
 dyeline_set_warnings(dyeline_designer_tests)
-add_dependencies(dyeline_designer_tests dyeline_designer)
+add_dependencies(dyeline_designer_tests dyeline_designer_stub)
 gtest_discover_tests(dyeline_designer_tests)
+
+# The Look Designer's editing model.
+add_executable(dyeline_look_editor_tests look_editor_test.cpp)
+target_link_libraries(dyeline_look_editor_tests PRIVATE dyeline_designer_model GTest::gtest_main)
+dyeline_set_warnings(dyeline_look_editor_tests)
+gtest_discover_tests(dyeline_look_editor_tests)
+
+# The real designer, drawn for a few frames on SDL's offscreen video driver, so its window
+# code runs on machines without a display.
+if(DYELINE_BUILD_DESIGNER)
+    add_executable(dyeline_designer_app_tests designer_app_test.cpp)
+    target_compile_definitions(dyeline_designer_app_tests PRIVATE
+        DYELINE_DESIGNER_PATH="$<TARGET_FILE:dyeline_designer>")
+    target_link_libraries(dyeline_designer_app_tests PRIVATE Dyeline::core GTest::gtest_main)
+    dyeline_set_warnings(dyeline_designer_app_tests)
+    add_dependencies(dyeline_designer_app_tests dyeline_designer)
+    gtest_discover_tests(dyeline_designer_app_tests
+        PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_RENDER_DRIVER=software")
+endif()
 
 # GPU backends against the CPU reference. These skip themselves on machines without a GPU.
 if(DYELINE_ENABLE_CUDA)

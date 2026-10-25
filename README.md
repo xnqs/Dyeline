@@ -12,7 +12,8 @@ the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS) 
 provides one. The tools so far are Exposure, Contrast, S Curve, Hue/Saturation, Black & White, Channel
 Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade, LUT, Lens Vignette, Grain,
 Diffusion Filter and Halation (see
-[docs/tools.md](docs/tools.md)), and the Look Designer is still a stand-in (see below). It is not useful for real work yet.
+[docs/tools.md](docs/tools.md)). The Look Designer edits the chain, the tools and the color
+settings; its preview and scopes are still to come. It is not useful for real work yet.
 
 ## Looks
 
@@ -80,30 +81,44 @@ plugin folder, or run `cmake --install build` to copy it to the standard locatio
 | macOS | `/Library/OFX/Plugins` |
 | Linux | `/usr/OFX/Plugins` |
 
-## Trying the designer round trip
+## The Look Designer
 
-The bundle ships `dyeline-designer` next to the plugin binary. For now it is a stub with no
-window: it raises the look's Exposure tool by one stop (adding one if the look has none) and
-hands the look back. There are two ways to link it to the plugin, depending on the host.
+The bundle ships `dyeline-designer` next to the plugin binary: a window for editing a look.
 
-**Edit Look (Natron, Resolve).** Click **Edit Look...** in the plugin's controls. The host
-freezes while the designer runs (two seconds), then the image gets a stop brighter and the
-**Designer** line reports how long the round trip took. Undo restores the old look in one step.
-To check how a host copes with a long edit, start it with `DYELINE_DESIGNER_DELAY` set to the
-number of seconds the stub should wait, for example `DYELINE_DESIGNER_DELAY=60 natron`.
+- **Chain** (left): the look's tools, in the order they run. The checkbox bypasses a tool, drag
+  a tool to reorder it, and right-click it to move, duplicate or remove it. **Add tool** puts a
+  new tool after the selected one.
+- **Tool** (right): the selected tool's Strength and parameters. Double-click a control, or
+  right-click it, to put it back to its default.
+- **Top bar**: the look's name and its color settings (see [docs/color.md](docs/color.md)).
+- Ctrl+Z and Ctrl+Shift+Z (Cmd on macOS) undo and redo.
+
+A tool this build doesn't know stays in the look, shown as missing, and is bypassed.
+
+There are two ways to link the designer to the plugin, depending on the host.
+
+**Edit Look (Natron, Resolve).** Click **Edit Look...** in the plugin's controls. The host waits
+while the designer is open; **Apply** hands the edited look back and **Cancel** leaves it as it
+was. Undo in the host restores the old look in one step.
 
 **Look File (EffectCraft, and any host).** Some hosts never take parameter values back from a
 plugin, so Edit Look does nothing there. Instead, set **Look File** to a `.dyeline` file and
 edit that file with the designer:
 
 ```sh
-dyeline-designer --file ~/looks/test.dyeline   # creates it, or adds a stop each run
+dyeline-designer --file ~/looks/test.dyeline   # creates it if it doesn't exist
 ```
 
-While Look File is set, the file's look is rendered instead of the one saved with the project,
-and the plugin re-reads the file whenever it changes. Hosts that cache frames by parameter
-values alone, such as EffectCraft, keep showing the old frame after the file changes: add one to
-**Reload Look File** to make them render again.
+**Save** (Ctrl+S) writes the file. While Look File is set, the file's look is rendered instead of
+the one saved with the project, and the plugin re-reads the file whenever it changes. Hosts that
+cache frames by parameter values alone, such as EffectCraft, keep showing the old frame after the
+file changes: add one to **Reload Look File** to make them render again.
+
+The designer is built with Dear ImGui and SDL3, fetched at configure time. On Linux, SDL needs
+the X11 and Wayland development packages (on Debian/Ubuntu: `libx11-dev libxext-dev
+libxcursor-dev libxi-dev libxrandr-dev libxss-dev libxtst-dev libxfixes-dev libxkbcommon-dev
+libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libgl-dev libdbus-1-dev
+libudev-dev`). `-DDYELINE_BUILD_DESIGNER=OFF` builds a windowless stand-in instead.
 
 ## Contributing
 

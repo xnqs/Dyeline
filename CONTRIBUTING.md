@@ -29,7 +29,7 @@ git commit -s
 | `core/include/dyeline/kernels/tools/` | One header per tool with its per-pixel math, plus `color_space.h`, the camera curves. |
 | `core/src/gpu/` | Thin CUDA, Metal and OpenCL wrappers that launch the shared kernels. |
 | `plugin/` | The OFX plugin: parameters, clips and the bridge to the core. |
-| `designer/` | The Look Designer app (a stub for now), launched by the plugin. |
+| `designer/` | The Look Designer app (Dear ImGui on SDL3), launched by the plugin. `src/look_editor.*` is its editing model, tested without a window. |
 | `tests/` | Unit tests for the core and a plugin load test. |
 | `schema/` | The JSON Schema of the `.dyeline` look format. |
 | `cmake/` | Build helpers: OpenFX SDK fetch and bundle layout. |

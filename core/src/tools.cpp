@@ -334,7 +334,7 @@ std::vector<ToolSpec> make_tools() {
                      nullptr, encode_three_way, three_way_is_identity, nullptr});
     tools.push_back({"lut", "LUT", ToolCategory::Matte, 1,
                      {{"gamma", "LUT Gamma", 1.0, 0.2, 5.0}},
-                     nullptr, encode_unused, never_identity, prepare_lut});
+                     nullptr, encode_unused, never_identity, prepare_lut, "file"});
     tools.push_back({"lens-vignette", "Lens Vignette", ToolCategory::Lens, 1,
                      {{"amount", "Amount", -1.0, -4.0, 4.0},
                       {"size", "Size", 0.5, 0.0, 2.0},
@@ -347,8 +347,8 @@ std::vector<ToolSpec> make_tools() {
                      {{"amount", "Amount", 0.3, 0.0, 1.0},
                       {"size", "Size", 1.5, 0.5, 8.0},
                       {"color", "Color", 0.3, 0.0, 1.0},
-                      {"animate", "Animate", 1.0, 0.0, 1.0},
-                      {"seed", "Seed", 0.0, 0.0, 9999.0}},
+                      {"animate", "Animate", 1.0, 0.0, 1.0, ParamKind::Toggle},
+                      {"seed", "Seed", 0.0, 0.0, 9999.0, ParamKind::Integer}},
                      nullptr, encode_grain, grain_is_identity, nullptr});
     tools.push_back({"diffusion", "Diffusion Filter", ToolCategory::Lens, 1,
                      {{"amount", "Amount", 0.5, 0.0, 1.0},

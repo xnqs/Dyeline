@@ -12,6 +12,10 @@ Third-party software fetched at build time:
   The OFX headers and C++ support library are compiled into the plugin.
 - JSON for Modern C++ (https://github.com/nlohmann/json), MIT. Compiled into the plugin and
   the designer to read and write looks.
+- SDL 3 (https://github.com/libsdl-org/SDL), zlib license. Compiled into the designer for its
+  window and input.
+- Dear ImGui (https://github.com/ocornut/imgui), MIT. Compiled into the designer for its
+  controls.
 - Khronos OpenCL headers (https://github.com/KhronosGroup/OpenCL-Headers), Apache-2.0.
 - GoogleTest (https://github.com/google/googletest), BSD-3-Clause. Used for tests only.
 

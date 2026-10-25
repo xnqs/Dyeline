@@ -18,12 +18,20 @@ namespace dyeline {
 
 enum class ToolCategory { Subject, Matte, Lens, Camera, Post };
 
+// How the Look Designer shows a parameter. Every value is stored as a number either way.
+enum class ParamKind {
+    Number,   // a slider
+    Toggle,   // a checkbox: 0 or 1
+    Integer,  // a whole-number field
+};
+
 struct ParamSpec {
     const char* id;
     const char* label;
     double default_value;
     double min;
     double max;
+    ParamKind kind = ParamKind::Number;
 };
 
 // A tool's parameter values, already migrated, defaulted and clamped, in ParamSpec order.
@@ -57,6 +65,9 @@ struct ToolSpec {
     // Returns false to leave the tool out of the pass, with `problem` saying why when the
     // user should hear about it (a missing file, say), or empty when there is nothing to do.
     bool (*prepare)(PrepareContext& context, dl_op& op, std::string& problem);
+    // The id of a parameter holding a file path, which the designer shows as a file field, or
+    // null. It's stored in the entry's params as a string, beside the numbers.
+    const char* file_param = nullptr;
 };
 
 // All registered tools, in tools-drawer order.
