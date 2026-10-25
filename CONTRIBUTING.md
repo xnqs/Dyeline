@@ -26,7 +26,7 @@ git commit -s
 | --- | --- |
 | `core/` | The render core: tools and color math. Plain C++17, no OFX types. |
 | `core/include/dyeline/kernels/` | The fused per-pixel pass, shared by every backend (CPU, CUDA, Metal, OpenCL). |
-| `core/include/dyeline/kernels/tools/` | One header per tool with its per-pixel math. |
+| `core/include/dyeline/kernels/tools/` | One header per tool with its per-pixel math, plus `color_space.h`, the camera curves. |
 | `core/src/gpu/` | Thin CUDA, Metal and OpenCL wrappers that launch the shared kernels. |
 | `plugin/` | The OFX plugin: parameters, clips and the bridge to the core. |
 | `designer/` | The Look Designer app (a stub for now), launched by the plugin. |

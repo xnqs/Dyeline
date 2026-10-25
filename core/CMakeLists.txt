@@ -1,5 +1,6 @@
 add_library(dyeline_core STATIC
     src/chain.cpp
+    src/color.cpp
     src/cube.cpp
     src/designer_link.cpp
     src/look.cpp

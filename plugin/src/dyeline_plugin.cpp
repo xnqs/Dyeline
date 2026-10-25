@@ -265,7 +265,7 @@ private:
                              "are bypassed: " + join(chain.missing_tools));
             } else if (!chain.problems.empty()) {
                 show_message(OFX::Message::eMessageWarning,
-                             "Dyeline: some tools are bypassed. " + join(chain.problems));
+                             "Dyeline: part of this look is bypassed. " + join(chain.problems));
             } else {
                 show_message(OFX::Message::eMessageMessage, "");
             }

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "dyeline/color.h"
 #include "dyeline/tools.h"
 
 namespace dyeline {
@@ -33,6 +34,13 @@ bool compile_chain(const Look& look, double strength, CompiledChain& out, std::s
                    const std::string& base_dir) {
     CompiledChain compiled;
     compiled.pass.strength = static_cast<float>(std::clamp(strength, 0.0, 1.0));
+    std::string color_problem;
+    if (encode_color(look.color, compiled.pass.input, compiled.pass.output, color_problem)) {
+        compiled.color_round_trips =
+            look.color.output == "same" || look.color.output == look.color.input;
+    } else {
+        compiled.problems.push_back("Color: " + color_problem);
+    }
     for (const ToolEntry& entry : look.chain) {
         const ToolSpec* tool = find_tool(entry.tool);
         if (tool == nullptr || entry.tool_version > tool->version) {
