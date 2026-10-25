@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "dyeline/look.h"
@@ -43,6 +44,9 @@ public:
     // is none, clamped to its range.
     double param(std::size_t i, const ParamSpec& spec) const;
     void set_param(std::size_t i, const ParamSpec& spec, double value);
+    // Sets several of entry i's parameters at once, as one undo step (an on-image handle
+    // moving a center sets x and y together).
+    void set_params(std::size_t i, const std::vector<std::pair<const ParamSpec*, double>>& values);
     void reset_param(std::size_t i, const ParamSpec& spec);
 
     // A text parameter, such as a LUT's file path.

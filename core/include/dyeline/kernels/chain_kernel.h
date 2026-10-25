@@ -28,6 +28,7 @@
 #include "tools/lut.h"
 #include "tools/matrix.h"
 #include "tools/s_curve.h"
+#include "tools/selective.h"
 #include "tools/shadows_highlights.h"
 #include "tools/three_way.h"
 
@@ -51,6 +52,9 @@
 #define DL_OP_FILM_NEGATIVE 13
 #define DL_OP_FILM_PRINT 14
 #define DL_OP_BLEACH_BYPASS 15
+#define DL_OP_GRADIENT 16
+#define DL_OP_SPOT 17
+#define DL_OP_FILL 18
 
 // Spatial ops keep their blur size in their last parameter, for the host's render plan.
 #define DL_OP_BLUR_SIZE (DL_OP_PARAMS - 1)
@@ -165,6 +169,12 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
             return dl_tool_film_print(c, op->p, table);
         case DL_OP_BLEACH_BYPASS:
             return dl_tool_bleach_bypass(c, op->p);
+        case DL_OP_GRADIENT:
+            return dl_tool_gradient(c, op->p, at);
+        case DL_OP_SPOT:
+            return dl_tool_spot(c, op->p, at);
+        case DL_OP_FILL:
+            return dl_tool_fill(c, op->p, at);
         case DL_OP_LENS_VIGNETTE:
             return dl_tool_lens_vignette(c, op->p, at);
         case DL_OP_GRAIN:

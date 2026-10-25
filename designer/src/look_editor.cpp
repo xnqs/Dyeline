@@ -123,20 +123,38 @@ double LookEditor::param(std::size_t i, const ParamSpec& spec) const {
 }
 
 void LookEditor::set_param(std::size_t i, const ParamSpec& spec, double value) {
-    if (!valid(i) || tool_at(i) == nullptr) {
+    set_params(i, {{&spec, value}});
+}
+
+void LookEditor::set_params(std::size_t i,
+                            const std::vector<std::pair<const ParamSpec*, double>>& values) {
+    if (!valid(i) || tool_at(i) == nullptr || values.empty()) {
         return;
-    }
-    value = std::clamp(value, spec.min, spec.max);
-    if (spec.kind != ParamKind::Number) {
-        value = std::round(value);
     }
     nlohmann::json& params = look_.chain[i].params;
-    if (const auto it = params.find(spec.id);
-        it != params.end() && it->is_number() && it->get<double>() == value) {
+    bool changed = false;
+    for (auto [spec, value] : values) {
+        value = std::clamp(value, spec->min, spec->max);
+        if (spec->kind != ParamKind::Number) {
+            value = std::round(value);
+        }
+        const auto it = params.find(spec->id);
+        if (it == params.end() || !it->is_number() || it->get<double>() != value) {
+            changed = true;
+        }
+    }
+    if (!changed) {
         return;
     }
-    checkpoint("param:" + std::to_string(i) + ":" + spec.id);
-    params[spec.id] = value;
+    // One undo step for the whole set, however many times a drag repeats it.
+    checkpoint("param:" + std::to_string(i) + ":" + values.front().first->id);
+    for (auto [spec, value] : values) {
+        value = std::clamp(value, spec->min, spec->max);
+        if (spec->kind != ParamKind::Number) {
+            value = std::round(value);
+        }
+        params[spec->id] = value;
+    }
 }
 
 void LookEditor::reset_param(std::size_t i, const ParamSpec& spec) {

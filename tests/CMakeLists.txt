@@ -38,7 +38,8 @@ add_dependencies(dyeline_designer_tests dyeline_designer_stub)
 gtest_discover_tests(dyeline_designer_tests)
 
 # The Look Designer's editing model.
-add_executable(dyeline_look_editor_tests look_editor_test.cpp preview_test.cpp bundled_looks_test.cpp)
+add_executable(dyeline_look_editor_tests handles_test.cpp look_editor_test.cpp preview_test.cpp
+    bundled_looks_test.cpp)
 target_compile_definitions(dyeline_look_editor_tests PRIVATE
     DYELINE_LOOKS_DIR="${PROJECT_SOURCE_DIR}/looks")
 target_link_libraries(dyeline_look_editor_tests PRIVATE dyeline_designer_model GTest::gtest_main)

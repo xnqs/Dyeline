@@ -38,6 +38,21 @@ struct ParamSpec {
     std::vector<const char*> choices = {};
 };
 
+// A control the Look Designer draws over its preview, for a tool that depends on where a pixel
+// is. Positions use Lens Vignette's measure: a center is a fraction of the frame's half width
+// and half height from its middle, y up, and a distance is 1 at the frame's corners.
+enum class HandleKind {
+    Point,   // `x` and `y`: the ids of a center's two parameters
+    Radius,  // `x`: a distance from the tool's Point, drawn as a circle around it
+    Angle,   // `x`: degrees clockwise from up, drawn as an arrow from the tool's Point
+};
+
+struct HandleSpec {
+    HandleKind kind;
+    const char* x;
+    const char* y = nullptr;
+};
+
 // A tool's parameter values, already migrated, defaulted and clamped, in ParamSpec order.
 using ParamValues = std::vector<double>;
 
@@ -76,6 +91,8 @@ struct ToolSpec {
     // it. False for tools that also depend on where the pixel is or on its neighbors (a
     // vignette, grain, glows), which .cube export leaves out.
     bool color_only = true;
+    // On-image handles, Point first when there is one.
+    std::vector<HandleSpec> handles = {};
 };
 
 // All registered tools, in tools-drawer order.

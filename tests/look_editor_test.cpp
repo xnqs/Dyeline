@@ -226,3 +226,24 @@ TEST(LookEditor, AppliesAPresetButKeepsTheColorSettings) {
     EXPECT_EQ(editor.look().meta.name, "Mine");
     EXPECT_TRUE(editor.look().chain.empty());
 }
+
+TEST(LookEditor, DraggingACenterIsOneUndoStep) {
+    LookEditor editor{Look{}};
+    editor.add_tool("spot-exposure", 0);
+    const ParamSpec& x = spec_of("spot-exposure", "center-x");
+    const ParamSpec& y = spec_of("spot-exposure", "center-y");
+    for (double v = 0.1; v < 0.6; v += 0.1) {
+        editor.set_params(0, {{&x, v}, {&y, -v}});
+    }
+    editor.end_gesture();
+    EXPECT_NEAR(editor.param(0, x), 0.5, 1e-9);
+    EXPECT_NEAR(editor.param(0, y), -0.5, 1e-9);
+    editor.set_params(0, {{&x, 5.0}, {&y, 0.0}});  // clamped, like a slider
+    EXPECT_DOUBLE_EQ(editor.param(0, x), 1.0);
+    editor.end_gesture();
+    ASSERT_TRUE(editor.undo());
+    EXPECT_NEAR(editor.param(0, x), 0.5, 1e-9);
+    ASSERT_TRUE(editor.undo());
+    EXPECT_DOUBLE_EQ(editor.param(0, x), 0.0);
+    EXPECT_DOUBLE_EQ(editor.param(0, y), 0.0);
+}
