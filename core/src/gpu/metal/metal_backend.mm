@@ -3,6 +3,7 @@
 
 #import <Metal/Metal.h>
 
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -180,6 +181,88 @@ std::string render_plan(void* command_queue, const void* src_buffer, void* dst_b
             if (commands.error != nil) {
                 return std::string("Metal render failed: ") +
                        commands.error.localizedDescription.UTF8String;
+            }
+        }
+    }
+    return {};
+}
+
+namespace {
+
+// Dyeline's own Metal device, for hosts that render on the CPU: the system's default GPU,
+// opened once and kept for the life of the process.
+struct OwnDevice {
+    id<MTLCommandQueue> queue = nil;
+    std::string name;
+    std::string error;
+    std::mutex mutex;  // one render at a time on the shared queue
+};
+
+OwnDevice& own_device() {
+    static OwnDevice device;
+    static std::once_flag opened;
+    std::call_once(opened, [] {
+        @autoreleasepool {
+            id<MTLDevice> gpu = MTLCreateSystemDefaultDevice();
+            if (gpu == nil) {
+                device.error = "No Metal GPU was found";
+                return;
+            }
+            device.queue = [gpu newCommandQueue];
+            if (device.queue == nil) {
+                device.error = "Could not create a Metal command queue";
+                return;
+            }
+            device.name = gpu.name.UTF8String;
+        }
+    });
+    return device;
+}
+
+}  // namespace
+
+std::string own_device_name(std::string& error) {
+    OwnDevice& device = own_device();
+    error = device.error;
+    return device.name;
+}
+
+std::string render_plan_own_device(const float* src, std::size_t src_floats, float* dst,
+                                   std::size_t dst_floats, const RenderPlan& plan,
+                                   const float* table, std::size_t table_floats) {
+    OwnDevice& device = own_device();
+    if (device.queue == nil) {
+        return device.error;
+    }
+    std::lock_guard<std::mutex> lock(device.mutex);
+    @autoreleasepool {
+        id<MTLDevice> gpu = device.queue.device;
+        id<MTLBuffer> src_buffer = [gpu newBufferWithBytes:src
+                                                    length:(src_floats > 0 ? src_floats : 1) * sizeof(float)
+                                                   options:MTLResourceStorageModeShared];
+        id<MTLBuffer> dst_buffer = [gpu newBufferWithLength:(dst_floats > 0 ? dst_floats : 1) * sizeof(float)
+                                                    options:MTLResourceStorageModeShared];
+        if (src_buffer == nil || dst_buffer == nil) {
+            return "Could not allocate Metal memory for the frame";
+        }
+        std::string error = render_plan((__bridge void*)device.queue, (__bridge void*)src_buffer,
+                                        (__bridge void*)dst_buffer, plan, table, table_floats,
+                                        /*wait=*/true);
+        if (!error.empty()) {
+            return error;
+        }
+        // Copy back only the window the final pass wrote, as on the CPU.
+        const float* rendered = static_cast<const float*>(dst_buffer.contents);
+        for (const RenderPass& pass : plan.passes) {
+            if (pass.kind != PassKind::Final || pass.image.width <= 0 || pass.image.height <= 0) {
+                continue;
+            }
+            const dl_image_args& a = pass.image;
+            const std::size_t row_floats = static_cast<std::size_t>(a.width * a.channels);
+            for (int y = 0; y < a.height; ++y) {
+                const std::size_t at = static_cast<std::size_t>(a.dst_y0 + y) * a.dst_row_floats +
+                                       static_cast<std::size_t>(a.dst_x0 * a.channels);
+                std::memcpy(dst + at, rendered + at, row_floats * sizeof(float));
             }
         }
     }

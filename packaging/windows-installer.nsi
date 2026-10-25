@@ -42,6 +42,12 @@ Section "Dyeline"
     File "${STAGING}\INSTALL.md"
     WriteUninstaller "${APP_DIR}\Uninstall.exe"
 
+    ; The Look Designer in the Start menu, for every user: it starts on a new look in the
+    ; user's own looks.
+    SetShellVarContext all
+    CreateShortCut "$SMPROGRAMS\Dyeline Look Designer.lnk" \
+        "$INSTDIR\Dyeline.ofx.bundle\Contents\Win64\dyeline-designer.exe"
+
     WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayName" "Dyeline OFX plugin"
     WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
     WriteRegStr HKLM "${UNINSTALL_KEY}" "Publisher" "Dyeline contributors"
@@ -59,6 +65,8 @@ Section "Uninstall"
     ; Only Dyeline's own files: the plugin folder holds other plugins too. Looks the user
     ; saved, in %APPDATA%\Dyeline, are kept.
     RMDir /r "$COMMONFILES64\OFX\Plugins\Dyeline.ofx.bundle"
+    SetShellVarContext all
+    Delete "$SMPROGRAMS\Dyeline Look Designer.lnk"
     Delete "${APP_DIR}\LICENSE"
     Delete "${APP_DIR}\NOTICE"
     Delete "${APP_DIR}\INSTALL.md"

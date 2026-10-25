@@ -1,12 +1,14 @@
 // Dyeline OFX plugin entry point.
 //
 // One effect that renders a look, a chain of tools, on the CPU or on the GPU the host hands
-// over (CUDA, Metal or OpenCL). The look is edited in the Look Designer app: through the
-// Edit Look round trip in hosts that take values back from a plugin (Natron, Resolve), or
-// through a look file the designer saves (EffectCraft). This file stays a thin bridge between
-// OFX and the render core in core/.
+// over (CUDA, Metal or OpenCL), or on Dyeline's own GPU when the host renders on the CPU. The
+// look is edited in the Look Designer app: through the Edit Look round trip in hosts that take
+// values back from a plugin (Natron, Resolve), or through a look file the designer saves,
+// opened with Open Designer (EffectCraft). This file stays a thin bridge between OFX and the
+// render core in core/.
 
 #include <atomic>
+#include <map>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -20,6 +22,7 @@
 
 #include "dyeline/chain.h"
 #include "dyeline/designer_link.h"
+#include "dyeline/effectcraft.h"
 #include "dyeline/frame_file.h"
 #include "dyeline/gpu.h"
 #include "dyeline/look.h"
@@ -37,12 +40,14 @@ constexpr unsigned int kPluginVersionMajor = 0;
 constexpr unsigned int kPluginVersionMinor = 1;
 
 constexpr const char* kParamStrength = "strength";
+constexpr const char* kParamOwnGpu = "ownGpu";
 
 // Look Designer link. Hosts that take parameter values back from a plugin (Natron, Resolve)
 // use the Edit Look round trip, and the look is stored in a hidden string so it saves with the
 // project. Hosts that don't (EffectCraft) point Look File at a .dyeline file the designer
 // saves; while it is set, the file's look is rendered instead.
 constexpr const char* kParamEditLook = "editLook";
+constexpr const char* kParamOpenDesigner = "openDesigner";
 constexpr const char* kParamLookFile = "lookFile";
 constexpr const char* kParamLookFileReload = "lookFileReload";
 constexpr const char* kParamLook = "look";
@@ -134,6 +139,48 @@ std::string join(const std::vector<std::string>& items) {
     return out;
 }
 
+// Designers started by Open Designer, by look file, shared by every instance in the process.
+// EffectCraft keeps several instances of one effect and tells each of them about a changed
+// value, so a look file gets one designer per new Open Designer value, and none while one is
+// still open on it.
+class DesignerLaunches {
+public:
+    // True when a designer should be started for `path` at counter `value`; it is then
+    // counted as open until finished() is called.
+    bool claim(const std::string& path, int value) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        Launch& launch = launches_[path];
+        if (launch.open || launch.value == value) {
+            return false;
+        }
+        launch.open = true;
+        launch.value = value;
+        return true;
+    }
+
+    void finished(const std::string& path) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        launches_[path].open = false;
+    }
+
+private:
+    struct Launch {
+        bool open = false;
+        int value = -1;
+    };
+    std::mutex mutex_;
+    std::map<std::string, Launch> launches_;
+};
+
+DesignerLaunches& designer_launches() {
+    static DesignerLaunches launches;
+    return launches;
+}
+
+// Whether Dyeline's own GPU still renders in this process. It is switched off for good after
+// it fails once, so a broken driver costs one failed frame, not every frame.
+std::atomic<bool> own_gpu_works{true};
+
 class DyelineEffect : public OFX::ImageEffect {
 public:
     explicit DyelineEffect(OfxImageEffectHandle handle)
@@ -141,14 +188,22 @@ public:
           dst_clip_(fetchClip(kOfxImageEffectOutputClipName)),
           src_clip_(fetchClip(kOfxImageEffectSimpleSourceClipName)),
           strength_(fetchDoubleParam(kParamStrength)),
+          own_gpu_(fetchBooleanParam(kParamOwnGpu)),
+          open_designer_(fetchIntParam(kParamOpenDesigner)),
           look_file_(fetchStringParam(kParamLookFile)),
           look_(fetchStringParam(kParamLook)),
           look_revision_(fetchIntParam(kParamLookRevision)),
-          designer_status_(fetchStringParam(kParamDesignerStatus)) {}
+          designer_status_(fetchStringParam(kParamDesignerStatus)) {
+        // The value this instance was created with is not a request to open the designer.
+        open_designer_->getValue(open_designer_seen_);
+    }
 
     void changedParam(const OFX::InstanceChangedArgs& args, const std::string& name) override {
         if (name == kParamEditLook) {
             edit_look(args.time, args.renderScale);
+        } else if (name == kParamOpenDesigner && args.reason == OFX::eChangeUserEdit &&
+                   take_open_designer_request()) {
+            open_designer(args.time, args.renderScale, /*with_frame=*/true);
         }
     }
 
@@ -181,8 +236,18 @@ public:
         geometry.premultiplied = premultiplied;
         const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, geometry);
 
-        if (args.isEnabledCudaRender || args.isEnabledMetalRender || args.isEnabledOpenCLRender) {
+        const bool host_gpu =
+            args.isEnabledCudaRender || args.isEnabledMetalRender || args.isEnabledOpenCLRender;
+        // EffectCraft doesn't always tell an effect a value changed, so Open Designer is also
+        // noticed here. A GPU render's images are on the GPU, so it opens without a frame.
+        if (take_open_designer_request()) {
+            open_designer(args.time, args.renderScale, /*with_frame=*/!host_gpu);
+        }
+        if (host_gpu) {
             render_gpu(args, *src, *dst, plan, chain);
+            return;
+        }
+        if (own_gpu_->getValueAtTime(args.time) && render_own_gpu(*src, *dst, geometry, plan, chain)) {
             return;
         }
         dyeline::run_plan_cpu(static_cast<const float*>(src->getPixelData()),
@@ -216,6 +281,9 @@ public:
 
     bool isIdentity(const OFX::IsIdentityArguments& args, OFX::Clip*& identity_clip,
                     double& identity_time) override {
+        if (open_designer_requested()) {
+            return false;  // render, which opens the designer
+        }
         dyeline::CompiledChain chain;
         try {
             chain = chain_at(args.time, /*report=*/false);
@@ -272,7 +340,7 @@ private:
                 show_message(OFX::Message::eMessageWarning,
                              "Dyeline: part of this look is bypassed. " + join(chain.problems));
             } else {
-                show_message(OFX::Message::eMessageMessage, "");
+                show_message(OFX::Message::eMessageMessage, notice());
             }
         }
         return chain;
@@ -349,6 +417,91 @@ private:
                 break;
         }
         designer_status_->setValue(status);
+    }
+
+    // Opens the designer on the look file without waiting for it, for hosts without push
+    // buttons or that can't wait (EffectCraft). Each save renders again: the plugin re-reads a
+    // changed look file, and in EffectCraft the designer also bumps Reload Look File through
+    // the control channel, when EffectCraft was started with one.
+    // True when Open Designer holds a value this instance hasn't acted on yet.
+    bool open_designer_requested() {
+        int value = 0;
+        open_designer_->getValue(value);
+        std::lock_guard<std::mutex> lock(message_mutex_);
+        return value != open_designer_seen_;
+    }
+
+    // Like open_designer_requested(), and marks the value as acted on.
+    bool take_open_designer_request() {
+        int value = 0;
+        open_designer_->getValue(value);
+        std::lock_guard<std::mutex> lock(message_mutex_);
+        if (value == open_designer_seen_) {
+            return false;
+        }
+        open_designer_seen_ = value;
+        return true;
+    }
+
+    void open_designer(double time, OfxPointD render_scale, bool with_frame) {
+        std::string file;
+        look_file_->getValue(file);
+        if (file.empty()) {
+            set_notice("Dyeline: set Look File to a .dyeline file (it is created if it doesn't "
+                       "exist), then add one to Open Designer.");
+            return;
+        }
+        set_notice("");
+        int counter = 0;
+        open_designer_->getValue(counter);
+        const std::string path = dyeline::expand_home(file);
+        if (!designer_launches().claim(path, counter)) {
+            return;  // another instance already opened it, or it is still open
+        }
+        std::vector<std::string> args = {"--file", path};
+        const std::string frame_path = with_frame ? write_preview_frame(time, render_scale) : std::string();
+        if (!frame_path.empty()) {
+            args.push_back("--frame");
+            args.push_back(frame_path);
+        }
+        if (const int port = dyeline::effectcraft::control_port(); port > 0) {
+            args.push_back("--effectcraft-port");
+            args.push_back(std::to_string(port));
+        }
+        std::string error;
+        const bool started = dyeline::designer::start(
+            dyeline::plugin::designer_path(), args,
+            [path, frame_path](int) {
+                if (!frame_path.empty()) {
+                    std::error_code ignored;
+                    std::filesystem::remove(std::filesystem::u8path(frame_path), ignored);
+                }
+                designer_launches().finished(path);
+            },
+            error);
+        if (!started) {
+            designer_launches().finished(path);
+            if (!frame_path.empty()) {
+                std::error_code ignored;
+                std::filesystem::remove(std::filesystem::u8path(frame_path), ignored);
+            }
+            set_notice("Dyeline: the designer failed: " + error);
+        }
+    }
+
+    // A message to show while the look renders cleanly, such as how to open the designer.
+    std::string notice() {
+        std::lock_guard<std::mutex> lock(message_mutex_);
+        return notice_;
+    }
+
+    void set_notice(const std::string& text) {
+        {
+            std::lock_guard<std::mutex> lock(message_mutex_);
+            notice_ = text;
+        }
+        show_message(text.empty() ? OFX::Message::eMessageMessage : OFX::Message::eMessageWarning,
+                     text);
     }
 
     // Saves the source frame at `time`, shrunk to preview size, for the designer to show.
@@ -442,9 +595,41 @@ private:
         }
     }
 
+    // Renders on Dyeline's own GPU when the host renders on the CPU. Returns false, so the
+    // caller renders on the CPU, when there is no such GPU or it failed.
+    bool render_own_gpu(const OFX::Image& src, OFX::Image& dst,
+                        const dyeline::RenderGeometry& geometry, const dyeline::RenderPlan& plan,
+                        const dyeline::CompiledChain& chain) {
+        if (!own_gpu_works.load() || geometry.src_row_floats <= 0 || geometry.dst_row_floats <= 0) {
+            return false;
+        }
+        const auto src_floats = static_cast<std::size_t>(geometry.src_row_floats) *
+                                static_cast<std::size_t>(geometry.src_bounds.height());
+        const auto dst_floats = static_cast<std::size_t>(geometry.dst_row_floats) *
+                                static_cast<std::size_t>(geometry.dst_bounds.height());
+        const auto* in = static_cast<const float*>(src.getPixelData());
+        auto* out = static_cast<float*>(dst.getPixelData());
+#ifdef __APPLE__
+        std::string error = dyeline::metal::render_plan_own_device(
+            in, src_floats, out, dst_floats, plan, chain.table.data(), chain.table.size());
+#else
+        std::string error = dyeline::opencl::render_plan_own_device(
+            in, src_floats, out, dst_floats, plan, chain.table.data(), chain.table.size());
+#endif
+        if (error.empty()) {
+            return true;
+        }
+        if (own_gpu_works.exchange(false)) {
+            std::fprintf(stderr, "Dyeline: rendering on the CPU: %s\n", error.c_str());
+        }
+        return false;
+    }
+
     OFX::Clip* dst_clip_;
     OFX::Clip* src_clip_;
     OFX::DoubleParam* strength_;
+    OFX::BooleanParam* own_gpu_;
+    OFX::IntParam* open_designer_;
     OFX::StringParam* look_file_;
     OFX::StringParam* look_;
     OFX::IntParam* look_revision_;
@@ -452,6 +637,8 @@ private:
     LookCache cache_;
     std::mutex message_mutex_;
     std::string message_;
+    std::string notice_;
+    int open_designer_seen_ = 0;
 };
 
 }  // namespace
@@ -526,6 +713,20 @@ void DyelineFactory::describeInContext(OFX::ImageEffectDescriptor& desc,
     edit_look->setHint("Opens the Look Designer. The host waits until you apply or close it.");
     page->addChild(*edit_look);
 
+    // Hosts without push buttons (EffectCraft) can't use Edit Look, and a host that has to wait
+    // for the designer stalls. Any new value here opens the designer on the look file and
+    // returns at once.
+    OFX::IntParamDescriptor* open_designer = desc.defineIntParam(kParamOpenDesigner);
+    open_designer->setLabels("Open Designer", "Open Designer", "Open Designer");
+    open_designer->setHint("Add one to open the Look Designer on the Look File, without the host "
+                           "waiting for it. Each Save in the designer updates the host. Use it "
+                           "where Edit Look isn't shown, such as EffectCraft.");
+    open_designer->setDefault(0);
+    open_designer->setRange(0, 1000000);
+    open_designer->setDisplayRange(0, 100);
+    open_designer->setAnimates(false);
+    page->addChild(*open_designer);
+
     OFX::StringParamDescriptor* look_file = desc.defineStringParam(kParamLookFile);
     look_file->setLabels("Look File", "Look File", "Look File");
     look_file->setHint("A .dyeline look saved by the Look Designer. While set, it is rendered "
@@ -547,6 +748,15 @@ void DyelineFactory::describeInContext(OFX::ImageEffectDescriptor& desc,
     reload->setDisplayRange(0, 100);
     reload->setAnimates(false);
     page->addChild(*reload);
+
+    OFX::BooleanParamDescriptor* own_gpu = desc.defineBooleanParam(kParamOwnGpu);
+    own_gpu->setLabels("Use Dyeline's GPU", "Use Dyeline's GPU", "Use Dyeline's GPU");
+    own_gpu->setHint("When the host renders on the CPU, render on the computer's GPU anyway, "
+                     "through OpenCL (Windows, Linux) or Metal (macOS). Falls back to the CPU "
+                     "when there is no GPU. The host's own GPU rendering is used first.");
+    own_gpu->setDefault(true);
+    own_gpu->setAnimates(false);
+    page->addChild(*own_gpu);
 
     OFX::StringParamDescriptor* status = desc.defineStringParam(kParamDesignerStatus);
     status->setLabels("Designer", "Designer", "Designer");

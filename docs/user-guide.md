@@ -151,7 +151,16 @@ file is saved, so several clips can share one look and change together. **Edit L
 edits the file. Clear the field to go back to the project's own look.
 
 Some hosts only render again when a value changes. If the clip still shows the old look after
-you saved the file, add one to **Reload Look File**.
+you saved the file, add one to **Reload Look File**. In EffectCraft the designer can do that
+for you (see [EffectCraft](#effectcraft)).
+
+### Open Designer
+
+**Open Designer** opens the designer on the **Look File** without the host waiting for it: add
+one to it (type the next number, or drag the slider). Your host keeps running while you edit,
+and each **Save** in the designer updates the clip. Use it in hosts that don't show the **Edit
+Look...** button, such as EffectCraft, or when you'd rather keep the designer open beside the
+host. Set **Look File** first; the file is created if it doesn't exist.
 
 ### Opening the designer on its own
 
@@ -170,14 +179,36 @@ look file without a host:
 The file is created if it doesn't exist. Opened this way there is no frame to preview, and the
 looks browser shows its thumbnails on a built-in test image instead.
 
+The installers on Windows and Linux also add **Dyeline Look Designer** to the Start menu or
+your desktop's application menu. Started from there, it opens a new look, saved as
+`Untitled.dyeline` (then `Untitled 2.dyeline` and so on) in your own looks folder.
+
 ## Host notes
 
 - **DaVinci Resolve**: add Dyeline from the OpenFX library onto a node. Set the color settings
   to match your project's timeline color space (see [Color settings](#color-settings)).
 - **Natron**: the defaults suit Natron, which works in scene-linear. Edit Look opens the
   designer with the frame at the playhead.
-- **EffectCraft**: if **Edit Look...** doesn't open the designer, use a look file: set **Look
-  File**, edit the file with the designer on its own, save, and add one to **Reload Look File**.
+- **EffectCraft**: see below.
+
+### EffectCraft
+
+EffectCraft doesn't show push buttons, so **Edit Look...** isn't there. Use a look file:
+
+1. Set **Look File** to a `.dyeline` file, such as `~/looks/night.dyeline`.
+2. Add one to **Open Designer**. The designer opens on the file with the current frame.
+3. Edit, and click **Save** whenever you want to see the result in EffectCraft.
+
+EffectCraft only renders an effect again when one of its values changes. If you start
+EffectCraft with its control channel on (`effectcraft --control 9877`, or with
+`EFFECTCRAFT_CONTROL_PORT=9877` set), each Save adds one to **Reload Look File** on every
+Dyeline effect that uses the file, so the viewer updates by itself. The designer's status line
+says whether that worked. Without the channel, add one to **Reload Look File** yourself after
+saving. The channel accepts commands from any program on your computer, so only turn it on
+while you use it.
+
+EffectCraft renders effects on the CPU. Dyeline renders on your GPU anyway when **Use
+Dyeline's GPU** is on (see [Rendering is slow](#troubleshooting)).
 
 ## Troubleshooting
 
@@ -188,16 +219,21 @@ looks browser shows its thumbnails on a built-in test image instead.
 Those tools are skipped but kept in the look, so nothing is lost when you update.
 
 **Nothing happens when I click Edit Look**: some hosts don't let effects open windows. Use a
-[look file](#linking-a-clip-to-a-look-file) instead. The **Designer** line under the button
-shows any error.
+[look file](#linking-a-clip-to-a-look-file) and [Open Designer](#open-designer) instead. The
+**Designer** line under the button shows any error.
 
 **The designer opened without a preview**: the host didn't hand out the frame (an unconnected
 input, or a host that only gives images while rendering). Editing works as usual.
 
-**Rendering is slow**: Dyeline uses CUDA on NVIDIA GPUs, Metal on Macs and OpenCL elsewhere,
-and falls back to the CPU when none is available. On Linux, install your GPU's OpenCL driver
-(for AMD and Intel, `mesa-opencl-icd`). The glow tools (Diffusion Filter, Halation) cost the
-most; bypass them while you work.
+**Rendering is slow**: Dyeline renders on the GPU your host hands it: CUDA on NVIDIA GPUs,
+Metal on Macs and OpenCL elsewhere. When the host renders on the CPU (EffectCraft, and Natron
+without OpenCL), **Use Dyeline's GPU** renders on the computer's GPU anyway, through Metal on
+a Mac and OpenCL elsewhere, and copies the frame there and back. Without a GPU it falls back to
+the CPU. On Linux, install your GPU's OpenCL driver: for AMD and Intel, `mesa-opencl-icd`. With
+Mesa's newer Rusticl driver, also set `RUSTICL_ENABLE=radeonsi` (AMD) or `RUSTICL_ENABLE=iris`
+(Intel) before starting the host. If a GPU fails, Dyeline prints why to the host's terminal
+and renders the rest of the session on the CPU. The glow tools (Diffusion Filter, Halation)
+cost the most; bypass them while you work.
 
 **macOS won't open the installer**: it isn't signed yet. Right-click the `.pkg`, choose
 **Open**, and confirm.

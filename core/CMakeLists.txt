@@ -4,6 +4,7 @@ add_library(dyeline_core STATIC
     src/cube.cpp
     src/cube_export.cpp
     src/designer_link.cpp
+    src/effectcraft.cpp
     src/frame_file.cpp
     src/library.cpp
     src/look.cpp
@@ -15,6 +16,10 @@ add_library(Dyeline::core ALIAS dyeline_core)
 target_include_directories(dyeline_core PUBLIC include)
 target_link_libraries(dyeline_core PUBLIC nlohmann_json::nlohmann_json)
 dyeline_set_warnings(dyeline_core)
+if(WIN32)
+    # The EffectCraft control channel: sockets, and the process's own command line.
+    target_link_libraries(dyeline_core PRIVATE ws2_32 shell32)
+endif()
 
 # CUDA backend: kernels compiled by nvcc, linked against the static CUDA runtime so the
 # plugin ships no extra libraries.

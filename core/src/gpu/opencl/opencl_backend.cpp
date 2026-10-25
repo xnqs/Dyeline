@@ -2,6 +2,8 @@
 // host's command queue.
 
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <map>
 #include <mutex>
 #include <string>
@@ -62,6 +64,7 @@ Api load_api(bool& ok) {
     void* library = open_library();
     ok = library != nullptr && load(library, "clGetPlatformIDs", a.GetPlatformIDs) &&
          load(library, "clGetDeviceIDs", a.GetDeviceIDs) &&
+         load(library, "clGetDeviceInfo", a.GetDeviceInfo) &&
          load(library, "clCreateContext", a.CreateContext) &&
          load(library, "clReleaseContext", a.ReleaseContext) &&
          load(library, "clCreateCommandQueue", a.CreateCommandQueue) &&
@@ -71,6 +74,7 @@ Api load_api(bool& ok) {
          load(library, "clReleaseMemObject", a.ReleaseMemObject) &&
          load(library, "clEnqueueWriteBuffer", a.EnqueueWriteBuffer) &&
          load(library, "clEnqueueReadBuffer", a.EnqueueReadBuffer) &&
+         load(library, "clEnqueueReadBufferRect", a.EnqueueReadBufferRect) &&
          load(library, "clCreateProgramWithSource", a.CreateProgramWithSource) &&
          load(library, "clBuildProgram", a.BuildProgram) &&
          load(library, "clGetProgramBuildInfo", a.GetProgramBuildInfo) &&
@@ -281,6 +285,125 @@ std::string render_plan(void* command_queue, const void* src_buffer, void* dst_b
         }
     }
     return {};
+}
+
+namespace {
+
+// Dyeline's own OpenCL device, for hosts that render on the CPU: the first GPU found, opened
+// once and kept for the life of the process. DYELINE_OPENCL_DEVICE=any accepts any device,
+// such as a CPU driver (tests use PoCL).
+struct OwnDevice {
+    cl_context context = nullptr;
+    cl_command_queue queue = nullptr;
+    std::string name;
+    std::string error;
+    std::mutex mutex;  // one render at a time on the shared queue
+};
+
+OwnDevice& own_device() {
+    static OwnDevice device;
+    static std::once_flag opened;
+    std::call_once(opened, [] {
+        const Api* cl = api();
+        if (cl == nullptr) {
+            device.error = "The OpenCL library could not be loaded";
+            return;
+        }
+        const char* wanted = std::getenv("DYELINE_OPENCL_DEVICE");
+        const cl_device_type type = wanted != nullptr && std::strcmp(wanted, "any") == 0
+                                        ? CL_DEVICE_TYPE_ALL
+                                        : CL_DEVICE_TYPE_GPU;
+        cl_platform_id platforms[16];
+        cl_uint platform_count = 0;
+        if (cl->GetPlatformIDs(16, platforms, &platform_count) != CL_SUCCESS) {
+            platform_count = 0;
+        }
+        for (cl_uint i = 0; i < platform_count; ++i) {
+            cl_device_id id = nullptr;
+            if (cl->GetDeviceIDs(platforms[i], type, 1, &id, nullptr) != CL_SUCCESS || id == nullptr) {
+                continue;
+            }
+            cl_int err = CL_SUCCESS;
+            const cl_context_properties props[] = {
+                CL_CONTEXT_PLATFORM, reinterpret_cast<cl_context_properties>(platforms[i]), 0};
+            cl_context context = cl->CreateContext(props, 1, &id, nullptr, nullptr, &err);
+            if (err != CL_SUCCESS) {
+                continue;
+            }
+            cl_command_queue queue = cl->CreateCommandQueue(context, id, 0, &err);
+            if (err != CL_SUCCESS) {
+                cl->ReleaseContext(context);
+                continue;
+            }
+            char name[256] = {};
+            cl->GetDeviceInfo(id, CL_DEVICE_NAME, sizeof(name) - 1, name, nullptr);
+            device.context = context;
+            device.queue = queue;
+            device.name = name;
+            return;
+        }
+        device.error = "No OpenCL GPU was found";
+    });
+    return device;
+}
+
+}  // namespace
+
+std::string own_device_name(std::string& error) {
+    OwnDevice& device = own_device();
+    error = device.error;
+    return device.name;
+}
+
+std::string render_plan_own_device(const float* src, std::size_t src_floats, float* dst,
+                                   std::size_t dst_floats, const RenderPlan& plan,
+                                   const float* table, std::size_t table_floats) {
+    OwnDevice& device = own_device();
+    if (device.queue == nullptr) {
+        return device.error;
+    }
+    const Api* cl = api();
+    std::lock_guard<std::mutex> lock(device.mutex);
+    cl_int err = CL_SUCCESS;
+    cl_mem src_buffer = cl->CreateBuffer(device.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                         src_floats * sizeof(float), const_cast<float*>(src), &err);
+    if (err != CL_SUCCESS) {
+        return cl_error("Could not upload the frame to the OpenCL device", err);
+    }
+    cl_mem dst_buffer = cl->CreateBuffer(device.context, CL_MEM_WRITE_ONLY,
+                                         dst_floats * sizeof(float), nullptr, &err);
+    if (err != CL_SUCCESS) {
+        cl->ReleaseMemObject(src_buffer);
+        return cl_error("Could not allocate the OpenCL output", err);
+    }
+    std::string error = render_plan(device.queue, src_buffer, dst_buffer, plan, table, table_floats);
+    // Read back only the window the final pass wrote; the rest of the host's buffer is left
+    // as it was, as on the CPU.
+    if (error.empty()) {
+        for (const RenderPass& pass : plan.passes) {
+            if (pass.kind != PassKind::Final || pass.image.width <= 0 || pass.image.height <= 0) {
+                continue;
+            }
+            const dl_image_args& a = pass.image;
+            const std::size_t row_bytes = static_cast<std::size_t>(a.dst_row_floats) * sizeof(float);
+            const std::size_t origin[3] = {
+                static_cast<std::size_t>(a.dst_x0 * a.channels) * sizeof(float),
+                static_cast<std::size_t>(a.dst_y0), 0};
+            const std::size_t region[3] = {
+                static_cast<std::size_t>(a.width * a.channels) * sizeof(float),
+                static_cast<std::size_t>(a.height), 1};
+            err = cl->EnqueueReadBufferRect(device.queue, dst_buffer, CL_TRUE, origin, origin,
+                                            region, row_bytes, 0, row_bytes, 0, dst, 0, nullptr,
+                                            nullptr);
+            if (err != CL_SUCCESS) {
+                error = cl_error("Could not read the frame back from the OpenCL device", err);
+            }
+        }
+    }
+    cl->Finish(device.queue);
+    cl->ReleaseMemObject(src_buffer);
+    cl->ReleaseMemObject(dst_buffer);
+    return error;
 }
 
 }  // namespace dyeline::opencl

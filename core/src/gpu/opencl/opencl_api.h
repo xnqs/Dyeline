@@ -14,6 +14,7 @@ namespace dyeline::opencl {
 struct Api {
     decltype(&::clGetPlatformIDs) GetPlatformIDs = nullptr;
     decltype(&::clGetDeviceIDs) GetDeviceIDs = nullptr;
+    decltype(&::clGetDeviceInfo) GetDeviceInfo = nullptr;
     decltype(&::clCreateContext) CreateContext = nullptr;
     decltype(&::clReleaseContext) ReleaseContext = nullptr;
     decltype(&::clCreateCommandQueue) CreateCommandQueue = nullptr;
@@ -23,6 +24,7 @@ struct Api {
     decltype(&::clReleaseMemObject) ReleaseMemObject = nullptr;
     decltype(&::clEnqueueWriteBuffer) EnqueueWriteBuffer = nullptr;
     decltype(&::clEnqueueReadBuffer) EnqueueReadBuffer = nullptr;
+    decltype(&::clEnqueueReadBufferRect) EnqueueReadBufferRect = nullptr;
     decltype(&::clCreateProgramWithSource) CreateProgramWithSource = nullptr;
     decltype(&::clBuildProgram) BuildProgram = nullptr;
     decltype(&::clGetProgramBuildInfo) GetProgramBuildInfo = nullptr;
