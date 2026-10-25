@@ -7,6 +7,7 @@
 #include "dyeline/chain.h"
 #include "dyeline/color.h"
 #include "dyeline/render.h"
+#include "scopes.h"
 
 namespace dyeline::designer {
 
@@ -111,14 +112,13 @@ void PreviewWorker::request(PreviewRequest request) {
     wake_.notify_all();
 }
 
-bool PreviewWorker::take(DisplayImage& image, std::vector<std::string>& problems) {
+bool PreviewWorker::take(PreviewResult& result) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!fresh_) {
         return false;
     }
     fresh_ = false;
-    image = std::move(done_);
-    problems = std::move(done_problems_);
+    result = std::move(done_);
     return true;
 }
 
@@ -137,12 +137,20 @@ void PreviewWorker::run() {
         const std::unique_ptr<PreviewRequest> request = std::move(pending_);
         busy_ = true;
         lock.unlock();
-        std::vector<std::string> problems;
-        DisplayImage image = render_preview(*frame_, *request, problems);
+        if (request->draft && draft_frame_ == nullptr) {
+            const Frame& f = *frame_;
+            draft_frame_ = std::make_shared<const Frame>(shrink_to_fit(
+                f.rgba.data(), f.width, f.height, 4, f.width * 4, f, kDraftWidth, kDraftHeight));
+        }
+        PreviewResult result;
+        result.draft = request->draft;
+        result.image = render_preview(request->draft ? *draft_frame_ : *frame_, *request,
+                                      result.problems);
+        result.parade = rgb_parade(result.image);
+        result.vectorscope = vectorscope(result.image);
         lock.lock();
         busy_ = false;
-        done_ = std::move(image);
-        done_problems_ = std::move(problems);
+        done_ = std::move(result);
         fresh_ = true;
         if (pending_ == nullptr) {
             idle_.notify_all();

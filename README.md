@@ -13,7 +13,7 @@ provides one. The tools so far are Exposure, Contrast, S Curve, Hue/Saturation, 
 Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade, LUT, Lens Vignette, Grain,
 Diffusion Filter and Halation (see
 [docs/tools.md](docs/tools.md)). The Look Designer edits the chain, the tools and the color
-settings, with a preview of the host's current frame; its scopes are still to come. It is not useful for real work yet.
+settings, with a preview of the host's current frame and its scopes. It is not useful for real work yet.
 
 ## Looks
 
@@ -89,10 +89,14 @@ The bundle ships `dyeline-designer` next to the plugin binary: a window for edit
   a tool to reorder it, and right-click it to move, duplicate or remove it. **Add tool** puts a
   new tool after the selected one.
 - **Preview** (top right): the host's current frame with the look applied, updated as you
-  edit. **Original** (or the B key) shows the frame without the look. Linear looks are shown
+  edit. While you drag a slider it follows at a smaller size, and the full-size render comes
+  when you let go. **Original** (or the B key) shows the frame without the look. Linear looks are shown
   through the sRGB curve, display and log spaces as they are; **View** overrides that. The
   plugin hands over the frame when you click Edit Look, shrunk to fit 1920 x 1080; a designer
   opened any other way has no frame to show.
+- **Scopes** (beside the preview, toggled with the checkbox or the S key): an RGB parade, and
+  a vectorscope with the 75% color bar targets and the skin tone line. Both read the preview
+  as it is shown on screen.
 - **Tool** (bottom right): the selected tool's Strength and parameters. Double-click a control,
   or right-click it, to put it back to its default.
 - **Top bar**: the look's name and its color settings (see [docs/color.md](docs/color.md)).
