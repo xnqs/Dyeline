@@ -86,7 +86,9 @@ add_executable(dyeline_plugin_load_test
 )
 target_include_directories(dyeline_plugin_load_test SYSTEM PRIVATE ${openfx_SOURCE_DIR}/include)
 target_compile_definitions(dyeline_plugin_load_test PRIVATE
-    DYELINE_PLUGIN_PATH="$<TARGET_FILE:dyeline_ofx>")
+    DYELINE_PLUGIN_PATH="$<TARGET_FILE:dyeline_ofx>"
+    DYELINE_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    DYELINE_VERSION_MINOR=${PROJECT_VERSION_MINOR})
 target_link_libraries(dyeline_plugin_load_test PRIVATE GTest::gtest_main ${CMAKE_DL_LIBS})
 dyeline_set_warnings(dyeline_plugin_load_test)
 add_dependencies(dyeline_plugin_load_test dyeline_ofx)

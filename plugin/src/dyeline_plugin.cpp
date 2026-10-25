@@ -36,8 +36,8 @@ namespace {
 
 // The plugin identifier is saved in host projects, so it must never change.
 constexpr const char* kPluginIdentifier = "io.github.xnqs.Dyeline";
-constexpr unsigned int kPluginVersionMajor = 0;
-constexpr unsigned int kPluginVersionMinor = 1;
+constexpr unsigned int kPluginVersionMajor = DYELINE_VERSION_MAJOR;
+constexpr unsigned int kPluginVersionMinor = DYELINE_VERSION_MINOR;
 
 constexpr const char* kParamStrength = "strength";
 constexpr const char* kParamOwnGpu = "ownGpu";

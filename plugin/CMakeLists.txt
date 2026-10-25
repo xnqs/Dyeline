@@ -3,6 +3,10 @@ add_library(dyeline_ofx MODULE
     src/module_path.cpp
 )
 target_link_libraries(dyeline_ofx PRIVATE Dyeline::core OpenFX::Support)
+# The version hosts see, from the project's.
+target_compile_definitions(dyeline_ofx PRIVATE
+    DYELINE_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    DYELINE_VERSION_MINOR=${PROJECT_VERSION_MINOR})
 dyeline_set_warnings(dyeline_ofx)
 
 # OFX bundle layout: Dyeline.ofx.bundle/Contents/<arch>/Dyeline.ofx
