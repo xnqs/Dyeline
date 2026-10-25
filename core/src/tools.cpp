@@ -342,19 +342,19 @@ std::vector<ToolSpec> make_tools() {
                       {"roundness", "Roundness", 1.0, 0.0, 1.0},
                       {"center-x", "Center X", 0.0, -1.0, 1.0},
                       {"center-y", "Center Y", 0.0, -1.0, 1.0}},
-                     nullptr, encode_lens_vignette, lens_vignette_is_identity, nullptr});
+                     nullptr, encode_lens_vignette, lens_vignette_is_identity, nullptr, nullptr, false});
     tools.push_back({"grain", "Grain", ToolCategory::Camera, 1,
                      {{"amount", "Amount", 0.3, 0.0, 1.0},
                       {"size", "Size", 1.5, 0.5, 8.0},
                       {"color", "Color", 0.3, 0.0, 1.0},
                       {"animate", "Animate", 1.0, 0.0, 1.0, ParamKind::Toggle},
                       {"seed", "Seed", 0.0, 0.0, 9999.0, ParamKind::Integer}},
-                     nullptr, encode_grain, grain_is_identity, nullptr});
+                     nullptr, encode_grain, grain_is_identity, nullptr, nullptr, false});
     tools.push_back({"diffusion", "Diffusion Filter", ToolCategory::Lens, 1,
                      {{"amount", "Amount", 0.5, 0.0, 1.0},
                       {"size", "Size", 1.0, 0.05, 10.0},
                       {"highlights", "Highlights", 0.5, 0.0, 1.0}},
-                     nullptr, encode_diffusion, diffusion_is_identity, nullptr});
+                     nullptr, encode_diffusion, diffusion_is_identity, nullptr, nullptr, false});
     tools.push_back({"halation", "Halation", ToolCategory::Camera, 1,
                      {{"amount", "Amount", 0.5, 0.0, 2.0},
                       {"threshold", "Threshold", 1.0, 0.05, 16.0},
@@ -362,7 +362,7 @@ std::vector<ToolSpec> make_tools() {
                       {"tint-red", "Tint Red", 1.0, 0.0, 1.0},
                       {"tint-green", "Tint Green", 0.25, 0.0, 1.0},
                       {"tint-blue", "Tint Blue", 0.05, 0.0, 1.0}},
-                     nullptr, encode_halation, halation_is_identity, nullptr});
+                     nullptr, encode_halation, halation_is_identity, nullptr, nullptr, false});
     return tools;
 }
 

@@ -68,6 +68,10 @@ struct ToolSpec {
     // The id of a parameter holding a file path, which the designer shows as a file field, or
     // null. It's stored in the entry's params as a string, beside the numbers.
     const char* file_param = nullptr;
+    // True when the tool's result depends only on the pixel's color, so a .cube LUT can hold
+    // it. False for tools that also depend on where the pixel is or on its neighbors (a
+    // vignette, grain, glows), which .cube export leaves out.
+    bool color_only = true;
 };
 
 // All registered tools, in tools-drawer order.
