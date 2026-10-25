@@ -11,7 +11,7 @@ workflow of Magic Bullet Looks.
 tools, on the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS) when
 the host provides one, else on its own OpenCL or Metal device, else on the CPU. The tools so far are Exposure, Contrast, S Curve, Hue/Saturation, Black & White, Channel
 Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade, LUT, Film Negative, Film Print,
-Lens Vignette, Grain, Diffusion Filter and Halation (see
+Bleach Bypass, 2-Strip, Lens Vignette, Grain, Diffusion Filter, Telecine Net and Halation (see
 [docs/tools.md](docs/tools.md)). The Look Designer edits the chain, the tools and the color
 settings, with a preview of the host's current frame, its scopes, and a looks browser with 22
 bundled looks. It is not useful for real work yet.

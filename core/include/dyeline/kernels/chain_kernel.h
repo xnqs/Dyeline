@@ -15,6 +15,7 @@
 #define DYELINE_KERNELS_CHAIN_KERNEL_H
 
 #include "dl_kernel.h"
+#include "tools/bleach_bypass.h"
 #include "tools/color_space.h"
 #include "tools/contrast.h"
 #include "tools/diffusion.h"
@@ -49,6 +50,7 @@
 #define DL_OP_HALATION 12
 #define DL_OP_FILM_NEGATIVE 13
 #define DL_OP_FILM_PRINT 14
+#define DL_OP_BLEACH_BYPASS 15
 
 // Spatial ops keep their blur size in their last parameter, for the host's render plan.
 #define DL_OP_BLUR_SIZE (DL_OP_PARAMS - 1)
@@ -161,6 +163,8 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
             return dl_tool_film_negative(c, op->p, table);
         case DL_OP_FILM_PRINT:
             return dl_tool_film_print(c, op->p, table);
+        case DL_OP_BLEACH_BYPASS:
+            return dl_tool_bleach_bypass(c, op->p);
         case DL_OP_LENS_VIGNETTE:
             return dl_tool_lens_vignette(c, op->p, at);
         case DL_OP_GRAIN:

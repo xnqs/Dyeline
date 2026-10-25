@@ -126,7 +126,7 @@ input to the camera's log space first: a LUT from a linear input cuts off everyt
 than white.
 
 A LUT can only map one color to another, so tools that depend on where a pixel is or on its
-neighbors are left out: **Lens Vignette**, **Grain**, **Diffusion Filter** and **Halation**.
+neighbors are left out: **Lens Vignette**, **Grain**, **Diffusion Filter**, **Telecine Net** and **Halation**.
 The export dialog lists what will be left out, and the file's header names it.
 
 ## Look files

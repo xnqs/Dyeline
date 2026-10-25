@@ -286,6 +286,31 @@ std::vector<const char*> print_stock_labels() {
     return labels;
 }
 
+// Bleach Bypass: see bleach_bypass.h.
+void encode_bleach_bypass(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_BLEACH_BYPASS;
+    op.p[0] = static_cast<float>(v[0]);
+    op.p[1] = static_cast<float>(v[1]);
+    for (int k = 0; k < 3; ++k) {
+        op.p[2 + k] = static_cast<float>(kLumaWeights[k]);
+    }
+}
+
+bool amount_is_zero(const ParamValues& v) {
+    return v[0] == 0.0;
+}
+
+// 2-Strip: the two-color process, which recorded only a red and a green-blue record. Red
+// stays; green and blue both become their average, so the image holds only red-orange and
+// cyan-green. Amount mixes from the original.
+void encode_two_strip(const ParamValues& v, dl_op& op) {
+    const double a = v[0];
+    const double m[3][3] = {{1.0, 0.0, 0.0},
+                            {0.0, 1.0 - 0.5 * a, 0.5 * a},
+                            {0.0, 0.5 * a, 1.0 - 0.5 * a}};
+    set_matrix(m, op);
+}
+
 // Lens Vignette: Amount in stops, reached Softness past Size (distances are 1 at the corners).
 void encode_lens_vignette(const ParamValues& v, dl_op& op) {
     op.tool = DL_OP_LENS_VIGNETTE;
@@ -335,6 +360,13 @@ void encode_diffusion(const ParamValues& v, dl_op& op) {
 
 bool diffusion_is_identity(const ParamValues& v) {
     return v[0] == 0.0;
+}
+
+// Telecine Net: a fine net in the light path scatters a share of every pixel's light evenly
+// over a wide area: Diffusion with every tone scattering alike. Shadows near bright areas
+// lift and contrast softens, while the frame's total light stays the same.
+void encode_telecine_net(const ParamValues& v, dl_op& op) {
+    encode_diffusion({v[0], v[1], 0.0}, op);
 }
 
 void encode_halation(const ParamValues& v, dl_op& op) {
@@ -420,6 +452,13 @@ std::vector<ToolSpec> make_tools() {
                       {"blue", "Blue Points", 0.0, -24.0, 24.0},
                       {"contrast", "Contrast", 1.0, 0.5, 2.0}},
                      nullptr, encode_unused, never_identity, prepare_film_print});
+    tools.push_back({"bleach-bypass", "Bleach Bypass", ToolCategory::Camera, 1,
+                     {{"amount", "Amount", 0.7, 0.0, 1.0},
+                      {"pivot", "Pivot", 0.18, 0.001, 10.0}},
+                     nullptr, encode_bleach_bypass, amount_is_zero, nullptr});
+    tools.push_back({"two-strip", "2-Strip", ToolCategory::Camera, 1,
+                     {{"amount", "Amount", 1.0, 0.0, 1.0}},
+                     nullptr, encode_two_strip, amount_is_zero, nullptr});
     tools.push_back({"lens-vignette", "Lens Vignette", ToolCategory::Lens, 1,
                      {{"amount", "Amount", -1.0, -4.0, 4.0},
                       {"size", "Size", 0.5, 0.0, 2.0},
@@ -440,6 +479,10 @@ std::vector<ToolSpec> make_tools() {
                       {"size", "Size", 1.0, 0.05, 10.0},
                       {"highlights", "Highlights", 0.5, 0.0, 1.0}},
                      nullptr, encode_diffusion, diffusion_is_identity, nullptr, nullptr, false});
+    tools.push_back({"telecine-net", "Telecine Net", ToolCategory::Post, 1,
+                     {{"amount", "Amount", 0.3, 0.0, 1.0},
+                      {"size", "Size", 4.0, 0.5, 10.0}},
+                     nullptr, encode_telecine_net, diffusion_is_identity, nullptr, nullptr, false});
     tools.push_back({"halation", "Halation", ToolCategory::Camera, 1,
                      {{"amount", "Amount", 0.5, 0.0, 2.0},
                       {"threshold", "Threshold", 1.0, 0.05, 16.0},
