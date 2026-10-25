@@ -193,13 +193,17 @@ public:
           look_file_(fetchStringParam(kParamLookFile)),
           look_(fetchStringParam(kParamLook)),
           look_revision_(fetchIntParam(kParamLookRevision)),
-          designer_status_(fetchStringParam(kParamDesignerStatus)) {}
+          designer_status_(fetchStringParam(kParamDesignerStatus)) {
+        // The value this instance was created with is not a request to open the designer.
+        open_designer_->getValue(open_designer_seen_);
+    }
 
     void changedParam(const OFX::InstanceChangedArgs& args, const std::string& name) override {
         if (name == kParamEditLook) {
             edit_look(args.time, args.renderScale);
-        } else if (name == kParamOpenDesigner && args.reason == OFX::eChangeUserEdit) {
-            open_designer(args.time, args.renderScale);
+        } else if (name == kParamOpenDesigner && args.reason == OFX::eChangeUserEdit &&
+                   take_open_designer_request()) {
+            open_designer(args.time, args.renderScale, /*with_frame=*/true);
         }
     }
 
@@ -232,7 +236,14 @@ public:
         geometry.premultiplied = premultiplied;
         const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, geometry);
 
-        if (args.isEnabledCudaRender || args.isEnabledMetalRender || args.isEnabledOpenCLRender) {
+        const bool host_gpu =
+            args.isEnabledCudaRender || args.isEnabledMetalRender || args.isEnabledOpenCLRender;
+        // EffectCraft doesn't always tell an effect a value changed, so Open Designer is also
+        // noticed here. A GPU render's images are on the GPU, so it opens without a frame.
+        if (take_open_designer_request()) {
+            open_designer(args.time, args.renderScale, /*with_frame=*/!host_gpu);
+        }
+        if (host_gpu) {
             render_gpu(args, *src, *dst, plan, chain);
             return;
         }
@@ -270,6 +281,9 @@ public:
 
     bool isIdentity(const OFX::IsIdentityArguments& args, OFX::Clip*& identity_clip,
                     double& identity_time) override {
+        if (open_designer_requested()) {
+            return false;  // render, which opens the designer
+        }
         dyeline::CompiledChain chain;
         try {
             chain = chain_at(args.time, /*report=*/false);
@@ -409,7 +423,27 @@ private:
     // buttons or that can't wait (EffectCraft). Each save renders again: the plugin re-reads a
     // changed look file, and in EffectCraft the designer also bumps Reload Look File through
     // the control channel, when EffectCraft was started with one.
-    void open_designer(double time, OfxPointD render_scale) {
+    // True when Open Designer holds a value this instance hasn't acted on yet.
+    bool open_designer_requested() {
+        int value = 0;
+        open_designer_->getValue(value);
+        std::lock_guard<std::mutex> lock(message_mutex_);
+        return value != open_designer_seen_;
+    }
+
+    // Like open_designer_requested(), and marks the value as acted on.
+    bool take_open_designer_request() {
+        int value = 0;
+        open_designer_->getValue(value);
+        std::lock_guard<std::mutex> lock(message_mutex_);
+        if (value == open_designer_seen_) {
+            return false;
+        }
+        open_designer_seen_ = value;
+        return true;
+    }
+
+    void open_designer(double time, OfxPointD render_scale, bool with_frame) {
         std::string file;
         look_file_->getValue(file);
         if (file.empty()) {
@@ -425,7 +459,7 @@ private:
             return;  // another instance already opened it, or it is still open
         }
         std::vector<std::string> args = {"--file", path};
-        const std::string frame_path = write_preview_frame(time, render_scale);
+        const std::string frame_path = with_frame ? write_preview_frame(time, render_scale) : std::string();
         if (!frame_path.empty()) {
             args.push_back("--frame");
             args.push_back(frame_path);
@@ -604,6 +638,7 @@ private:
     std::mutex message_mutex_;
     std::string message_;
     std::string notice_;
+    int open_designer_seen_ = 0;
 };
 
 }  // namespace

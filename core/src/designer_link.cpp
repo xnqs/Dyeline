@@ -19,6 +19,7 @@
 #endif
 #include <windows.h>
 #else
+#include <fcntl.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -97,8 +98,9 @@ std::wstring quote(const std::wstring& arg) {
     return out;
 }
 
-// Starts the program. Returns its process handle, or null with `error` set.
-HANDLE spawn(const std::vector<std::string>& argv, std::string& error) {
+// Starts the program. Returns its process handle, or null with `error` set. It inherits no
+// handles, so a `detached` one needs nothing more.
+HANDLE spawn(const std::vector<std::string>& argv, std::string& error, bool /*detached*/ = false) {
     std::wstring command_line;
     for (const std::string& arg : argv) {
         if (!command_line.empty()) {
@@ -133,15 +135,33 @@ const Process kNoProcess = nullptr;
 using Process = pid_t;
 const Process kNoProcess = -1;
 
-// Starts the program. Returns its process id, or -1 with `error` set.
-pid_t spawn(const std::vector<std::string>& argv, std::string& error) {
+// Starts the program. Returns its process id, or -1 with `error` set. A `detached` program's
+// standard streams go to /dev/null and it inherits no other files, so it never holds the
+// host's pipes or sockets open after the host quits.
+pid_t spawn(const std::vector<std::string>& argv, std::string& error, bool detached = false) {
     std::vector<char*> args;
     for (const std::string& arg : argv) {
         args.push_back(const_cast<char*>(arg.c_str()));
     }
     args.push_back(nullptr);
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawnattr_t attributes;
+    posix_spawnattr_init(&attributes);
+    if (detached) {
+        posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0);
+        posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
+        posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0);
+#if defined(__APPLE__)
+        posix_spawnattr_setflags(&attributes, POSIX_SPAWN_CLOEXEC_DEFAULT);
+#elif defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 34))
+        posix_spawn_file_actions_addclosefrom_np(&actions, 3);
+#endif
+    }
     pid_t pid = 0;
-    const int spawned = posix_spawn(&pid, args[0], nullptr, nullptr, args.data(), environ);
+    const int spawned = posix_spawn(&pid, args[0], &actions, &attributes, args.data(), environ);
+    posix_spawnattr_destroy(&attributes);
+    posix_spawn_file_actions_destroy(&actions);
     if (spawned != 0) {
         error = "could not start the designer: " + std::generic_category().message(spawned);
         return -1;
@@ -211,7 +231,7 @@ bool start(const std::string& designer_path, const std::vector<std::string>& arg
            std::function<void(int)> on_exit, std::string& error) {
     std::vector<std::string> argv = {designer_path};
     argv.insert(argv.end(), args.begin(), args.end());
-    const Process process = spawn(argv, error);
+    const Process process = spawn(argv, error, /*detached=*/true);
     if (process == kNoProcess) {
         return false;
     }
