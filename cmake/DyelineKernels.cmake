@@ -4,10 +4,15 @@
 #   <out_dir>/<name>.cpp    a C++ file defining `const char* const <symbol>`
 # and stores the .cpp path in <out_var>. Quoted #include lines are dropped because the
 # headers are inlined in order.
+# The order is the include order: the portability layer, every tool, then the chain pass.
 function(dyeline_embed_kernels out_var name symbol wrapper)
+    set(kernels ${PROJECT_SOURCE_DIR}/core/include/dyeline/kernels)
+    file(GLOB tool_headers CONFIGURE_DEPENDS ${kernels}/tools/*.h)
+    list(SORT tool_headers)
     set(inputs
-        ${PROJECT_SOURCE_DIR}/core/include/dyeline/kernels/dl_kernel.h
-        ${PROJECT_SOURCE_DIR}/core/include/dyeline/kernels/exposure_kernel.h
+        ${kernels}/dl_kernel.h
+        ${tool_headers}
+        ${kernels}/chain_kernel.h
         ${wrapper}
     )
     set(joined "")

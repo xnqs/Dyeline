@@ -8,7 +8,7 @@ bool available() {
     return false;
 }
 
-std::string exposure(void*, const void*, void*, const dl_exposure_args&, bool) {
+std::string render_chain(void*, const void*, void*, const dl_image_args&, const dl_chain&, bool) {
     return "Dyeline was built without OpenCL support";
 }
 

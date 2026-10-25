@@ -1,4 +1,4 @@
-// Runs Exposure through the CUDA backend and compares it with the CPU reference. Skipped on
+// Runs a look's chain through the CUDA backend and compares it with the CPU reference. Skipped on
 // machines without an NVIDIA GPU, such as CI runners.
 
 #include <cuda_runtime.h>
@@ -24,8 +24,9 @@ TEST(CudaBackend, MatchesCpuReference) {
     const int width = 37;
     const int height = 23;
     const std::vector<float> src = dyeline::test::make_frame(width, height);
-    const dl_exposure_args args = dyeline::test::window_args(width, height, 2.5f);
-    const std::vector<float> expected = dyeline::test::cpu_reference(src, args);
+    const dl_image_args args = dyeline::test::window_args(width, height);
+    const dl_chain chain = dyeline::test::test_chain();
+    const std::vector<float> expected = dyeline::test::cpu_reference(src, args, chain);
 
     const std::size_t bytes = src.size() * sizeof(float);
     float* d_src = nullptr;
@@ -35,7 +36,7 @@ TEST(CudaBackend, MatchesCpuReference) {
     ASSERT_EQ(cudaMemcpy(d_src, src.data(), bytes, cudaMemcpyHostToDevice), cudaSuccess);
     ASSERT_EQ(cudaMemset(d_dst, 0, bytes), cudaSuccess);
 
-    EXPECT_EQ(dyeline::cuda::exposure(nullptr, d_src, d_dst, args, /*wait=*/true), "");
+    EXPECT_EQ(dyeline::cuda::render_chain(nullptr, d_src, d_dst, args, chain, /*wait=*/true), "");
 
     std::vector<float> result(src.size());
     ASSERT_EQ(cudaMemcpy(result.data(), d_dst, bytes, cudaMemcpyDeviceToHost), cudaSuccess);
@@ -43,7 +44,7 @@ TEST(CudaBackend, MatchesCpuReference) {
     cudaFree(d_dst);
 
     for (std::size_t i = 0; i < result.size(); ++i) {
-        ASSERT_NEAR(result[i], expected[i], 1e-6f) << "index " << i;
+        ASSERT_NEAR(result[i], expected[i], dyeline::test::tolerance(expected[i])) << "index " << i;
     }
 }
 

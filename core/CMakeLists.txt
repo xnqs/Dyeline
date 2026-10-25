@@ -1,9 +1,12 @@
 add_library(dyeline_core STATIC
+    src/chain.cpp
     src/designer_link.cpp
-    src/exposure.cpp
+    src/look.cpp
+    src/tools.cpp
 )
 add_library(Dyeline::core ALIAS dyeline_core)
 target_include_directories(dyeline_core PUBLIC include)
+target_link_libraries(dyeline_core PUBLIC nlohmann_json::nlohmann_json)
 dyeline_set_warnings(dyeline_core)
 
 # CUDA backend: kernels compiled by nvcc, linked against the static CUDA runtime so the
