@@ -59,10 +59,11 @@ TEST(OpenCLBackend, MatchesCpuReference) {
     const int width = 37;
     const int height = 23;
     const std::vector<float> src = dyeline::test::make_frame(width, height);
-    const dl_image_args args = dyeline::test::window_args(width, height);
+    const dyeline::RenderGeometry geometry = dyeline::test::window_geometry(width, height);
     const dyeline::CompiledChain chain = dyeline::test::test_chain();
-    ASSERT_EQ(chain.pass.count, 13);  // all 13 tools, so the LUT loaded
-    const std::vector<float> expected = dyeline::test::cpu_reference(src, args, chain);
+    ASSERT_EQ(chain.pass.count, 15);  // all 15 tools, so the LUT loaded
+    const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, geometry);
+    const std::vector<float> expected = dyeline::test::cpu_reference(src, plan, chain);
 
     const std::size_t bytes = src.size() * sizeof(float);
     std::vector<float> result(src.size(), 0.0f);
@@ -73,8 +74,8 @@ TEST(OpenCLBackend, MatchesCpuReference) {
                                     result.data(), &err);
     ASSERT_EQ(err, CL_SUCCESS);
 
-    EXPECT_EQ(dyeline::opencl::render_chain(queue, d_src, d_dst, args, chain.pass,
-                                            chain.table.data(), chain.table.size(), /*wait=*/true),
+    EXPECT_EQ(dyeline::opencl::render_plan(queue, d_src, d_dst, plan, chain.table.data(),
+                                           chain.table.size(), /*wait=*/true),
               "");
 
     ASSERT_EQ(cl->EnqueueReadBuffer(queue, d_dst, CL_TRUE, 0, bytes, result.data(), 0, nullptr,
@@ -86,9 +87,11 @@ TEST(OpenCLBackend, MatchesCpuReference) {
 
     const dyeline::CompiledChain plain = dyeline::test::table_free_chain();
     ASSERT_TRUE(plain.table.empty());
-    const std::vector<float> plain_expected = dyeline::test::cpu_reference(src, args, plain);
-    EXPECT_EQ(dyeline::opencl::render_chain(queue, d_src, d_dst, args, plain.pass, nullptr, 0,
-                                            /*wait=*/true),
+    const dyeline::RenderPlan plain_plan = dyeline::plan_render(plain.pass, geometry);
+    ASSERT_EQ(plain_plan.work_floats, 0u);
+    const std::vector<float> plain_expected = dyeline::test::cpu_reference(src, plain_plan, plain);
+    EXPECT_EQ(dyeline::opencl::render_plan(queue, d_src, d_dst, plain_plan, nullptr, 0,
+                                           /*wait=*/true),
               "");
     ASSERT_EQ(cl->EnqueueReadBuffer(queue, d_dst, CL_TRUE, 0, bytes, result.data(), 0, nullptr,
                                     nullptr),

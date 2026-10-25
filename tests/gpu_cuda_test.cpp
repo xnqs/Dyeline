@@ -24,10 +24,11 @@ TEST(CudaBackend, MatchesCpuReference) {
     const int width = 37;
     const int height = 23;
     const std::vector<float> src = dyeline::test::make_frame(width, height);
-    const dl_image_args args = dyeline::test::window_args(width, height);
+    const dyeline::RenderGeometry geometry = dyeline::test::window_geometry(width, height);
     const dyeline::CompiledChain chain = dyeline::test::test_chain();
-    ASSERT_EQ(chain.pass.count, 13);  // all 13 tools, so the LUT loaded
-    const std::vector<float> expected = dyeline::test::cpu_reference(src, args, chain);
+    ASSERT_EQ(chain.pass.count, 15);  // all 15 tools, so the LUT loaded
+    const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, geometry);
+    const std::vector<float> expected = dyeline::test::cpu_reference(src, plan, chain);
 
     const std::size_t bytes = src.size() * sizeof(float);
     float* d_src = nullptr;
@@ -37,8 +38,9 @@ TEST(CudaBackend, MatchesCpuReference) {
     ASSERT_EQ(cudaMemcpy(d_src, src.data(), bytes, cudaMemcpyHostToDevice), cudaSuccess);
     ASSERT_EQ(cudaMemset(d_dst, 0, bytes), cudaSuccess);
 
-    EXPECT_EQ(dyeline::cuda::render_chain(nullptr, d_src, d_dst, args, chain.pass,
-                                          chain.table.data(), chain.table.size(), /*wait=*/true), "");
+    EXPECT_EQ(dyeline::cuda::render_plan(nullptr, d_src, d_dst, plan, chain.table.data(),
+                                         chain.table.size(), /*wait=*/true),
+              "");
 
     std::vector<float> result(src.size());
     ASSERT_EQ(cudaMemcpy(result.data(), d_dst, bytes, cudaMemcpyDeviceToHost), cudaSuccess);

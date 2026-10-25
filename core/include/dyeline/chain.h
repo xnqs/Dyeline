@@ -22,6 +22,16 @@ struct CompiledChain {
     // Data the pass reads besides its ops, such as LUT tables (see chain_kernel.h).
     std::vector<float> table;
 
+    // True when the chain has a tool that reads neighboring pixels.
+    bool has_spatial() const {
+        for (int i = 0; i < pass.count; ++i) {
+            if (dl_is_spatial(pass.ops[i].tool)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // True when rendering would leave every pixel unchanged.
     bool is_identity() const { return pass.count == 0 || pass.strength == 0.0f; }
 };
@@ -33,8 +43,9 @@ struct CompiledChain {
 bool compile_chain(const Look& look, double strength, CompiledChain& out, std::string& error,
                    const std::string& base_dir = {});
 
-// Runs a compiled chain over the window `args` describes, on the CPU, with the same kernel
-// code the GPU backends use. `src` and `dst` may be the same buffer.
+// Runs a compiled chain of per-pixel tools over the window `args` describes, on the CPU, with
+// the same kernel code the GPU backends use. `src` and `dst` may be the same buffer. A chain
+// with spatial tools needs several passes: plan it with plan_render (render.h) instead.
 void render_chain_window(const float* src, float* dst, const dl_image_args& args,
                          const CompiledChain& chain);
 

@@ -246,6 +246,40 @@ bool grain_is_identity(const ParamValues& v) {
     return v[0] == 0.0;
 }
 
+// Diffusion Filter and Halation blur over a share of the frame: Size is the blur's Gaussian
+// sigma as a percentage of the frame's width, so a look keeps its glow at any resolution.
+void set_blur_size(double percent_of_width, dl_op& op) {
+    op.p[DL_OP_BLUR_SIZE] = static_cast<float>(percent_of_width / 100.0);
+}
+
+void encode_diffusion(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_DIFFUSION;
+    op.p[0] = static_cast<float>(v[0]);
+    op.p[1] = static_cast<float>(v[2]);
+    for (int k = 0; k < 3; ++k) {
+        op.p[2 + k] = static_cast<float>(kLumaWeights[k]);
+    }
+    set_blur_size(v[1], op);
+}
+
+bool diffusion_is_identity(const ParamValues& v) {
+    return v[0] == 0.0;
+}
+
+void encode_halation(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_HALATION;
+    op.p[0] = static_cast<float>(v[0]);
+    op.p[1] = static_cast<float>(v[1]);
+    for (int k = 0; k < 3; ++k) {
+        op.p[2 + k] = static_cast<float>(v[3 + static_cast<std::size_t>(k)]);
+    }
+    set_blur_size(v[2], op);
+}
+
+bool halation_is_identity(const ParamValues& v) {
+    return v[0] == 0.0 || (v[3] == 0.0 && v[4] == 0.0 && v[5] == 0.0);
+}
+
 std::vector<ToolSpec> make_tools() {
     std::vector<ToolSpec> tools;
     tools.push_back({"exposure", "Exposure", ToolCategory::Matte, 1,
@@ -316,6 +350,19 @@ std::vector<ToolSpec> make_tools() {
                       {"animate", "Animate", 1.0, 0.0, 1.0},
                       {"seed", "Seed", 0.0, 0.0, 9999.0}},
                      nullptr, encode_grain, grain_is_identity, nullptr});
+    tools.push_back({"diffusion", "Diffusion Filter", ToolCategory::Lens, 1,
+                     {{"amount", "Amount", 0.5, 0.0, 1.0},
+                      {"size", "Size", 1.0, 0.05, 10.0},
+                      {"highlights", "Highlights", 0.5, 0.0, 1.0}},
+                     nullptr, encode_diffusion, diffusion_is_identity, nullptr});
+    tools.push_back({"halation", "Halation", ToolCategory::Camera, 1,
+                     {{"amount", "Amount", 0.5, 0.0, 2.0},
+                      {"threshold", "Threshold", 1.0, 0.05, 16.0},
+                      {"size", "Size", 0.6, 0.05, 5.0},
+                      {"tint-red", "Tint Red", 1.0, 0.0, 1.0},
+                      {"tint-green", "Tint Green", 0.25, 0.0, 1.0},
+                      {"tint-blue", "Tint Blue", 0.05, 0.0, 1.0}},
+                     nullptr, encode_halation, halation_is_identity, nullptr});
     return tools;
 }
 

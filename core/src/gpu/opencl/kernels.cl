@@ -7,10 +7,27 @@
 
 __kernel void dl_chain_kernel(__global const float* src, __global float* dst,
                               struct dl_image_args args, __constant struct dl_chain* chain,
-                              __global const float* table) {
+                              __global const float* table, __global const float* work) {
     const int x = (int)get_global_id(0);
     const int y = (int)get_global_id(1);
     if (x < args.width && y < args.height) {
-        dl_chain_at(src, dst, x, y, args, chain, table);
+        dl_chain_at(src, dst, x, y, args, chain, table, work);
+    }
+}
+
+__kernel void dl_extract_kernel(__global const float* src, __global float* work,
+                                struct dl_image_args args, __constant struct dl_chain* chain,
+                                __global const float* table, int stop) {
+    const int x = (int)get_global_id(0);
+    const int y = (int)get_global_id(1);
+    if (x < args.width && y < args.height) {
+        dl_extract_at(src, work, x, y, args, chain, stop, table);
+    }
+}
+
+__kernel void dl_box_kernel(__global float* work, struct dl_box_args box) {
+    const int line = (int)get_global_id(0);
+    if (line < box.lines) {
+        dl_box_line(work, box, line);
     }
 }

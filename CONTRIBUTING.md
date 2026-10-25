@@ -63,6 +63,14 @@ CMake assembles from every header in `kernels/tools/`.
 4. Pin its math in `tests/tools_test.cpp`. When you later change its parameters, raise its
    version and add a `migrate` step so older looks still load.
 
+A tool that blurs, like Diffusion Filter or Halation, is a spatial op: give it a
+`dl_tool_<tool>_extract` that picks the light to blur and a `dl_tool_<tool>_combine` that mixes
+the blurred image back into the pixel, add a `case` for each in `dl_extract_op` and
+`dl_run_op`, list its op code in `dl_is_spatial`, and store its blur sigma (as a
+fraction of the frame's width) in `p[DL_OP_BLUR_SIZE]`. `plan_render` in `core/src/render.cpp`
+adds the extract and blur passes and the margin the host must supply; test it in
+`tests/render_test.cpp`, including that tiled renders match a whole-frame one.
+
 ## Style
 
 - C++17, 4-space indent, `snake_case` for functions and variables, `PascalCase` for types.

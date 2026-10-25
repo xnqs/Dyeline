@@ -23,10 +23,10 @@
 #include "dyeline/gpu.h"
 #include "dyeline/look.h"
 #include "dyeline/paths.h"
+#include "dyeline/render.h"
 #include "module_path.h"
 #include "ofxsImageEffect.h"
 #include "ofxsMultiThread.h"
-#include "ofxsProcessing.h"
 
 namespace {
 
@@ -108,39 +108,6 @@ private:
     LoadedLook file_look_;
 };
 
-class ChainProcessor : public OFX::ImageProcessor {
-public:
-    // `frame` carries the render's place in the frame (see DyelineEffect::frame_args).
-    ChainProcessor(OFX::ImageEffect& effect, const OFX::Image& src, const dl_image_args& frame,
-                   const dyeline::CompiledChain& chain)
-        : OFX::ImageProcessor(effect), src_(src), frame_(frame), chain_(chain) {}
-
-    void multiThreadProcessImages(OfxRectI window) override {
-        for (int y = window.y1; y < window.y2; ++y) {
-            if (_effect.abort()) {
-                break;
-            }
-            auto* dst = static_cast<float*>(_dstImg->getPixelAddress(window.x1, y));
-            const auto* src = static_cast<const float*>(src_.getPixelAddress(window.x1, y));
-            if (dst == nullptr || src == nullptr) {
-                continue;
-            }
-            // One row at a time, addressed from its first pixel.
-            dl_image_args row = frame_;
-            row.width = window.x2 - window.x1;
-            row.height = 1;
-            row.frame_x0 = window.x1;
-            row.frame_y0 = y;
-            dyeline::render_chain_window(src, dst, row, chain_);
-        }
-    }
-
-private:
-    const OFX::Image& src_;
-    dl_image_args frame_;
-    const dyeline::CompiledChain& chain_;
-};
-
 int channel_count(OFX::PixelComponentEnum components) {
     switch (components) {
         case OFX::ePixelComponentRGBA:
@@ -198,18 +165,48 @@ public:
         const bool premultiplied = src->getPreMultiplication() == OFX::eImagePreMultiplied;
 
         const dyeline::CompiledChain chain = chain_at(args.time, /*report=*/true);
-        dl_image_args frame = frame_args(args, *src);
-        frame.channels = channels;
-        frame.premultiplied = premultiplied ? 1 : 0;
+        dyeline::RenderGeometry geometry =
+            frame_geometry(args.time, args.renderScale, src->getPixelAspectRatio());
+        geometry.window = to_rect(args.renderWindow);
+        geometry.src_bounds = to_rect(src->getBounds());
+        geometry.dst_bounds = to_rect(dst->getBounds());
+        geometry.src_row_floats = src->getRowBytes() / static_cast<int>(sizeof(float));
+        geometry.dst_row_floats = dst->getRowBytes() / static_cast<int>(sizeof(float));
+        geometry.channels = channels;
+        geometry.premultiplied = premultiplied;
+        const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, geometry);
+
         if (args.isEnabledCudaRender || args.isEnabledMetalRender || args.isEnabledOpenCLRender) {
-            render_gpu(args, *src, *dst, frame, chain);
+            render_gpu(args, *src, *dst, plan, chain);
             return;
         }
+        dyeline::run_plan_cpu(static_cast<const float*>(src->getPixelData()),
+                              static_cast<float*>(dst->getPixelData()), chain.table.data(), plan);
+    }
 
-        ChainProcessor processor(*this, *src, frame, chain);
-        processor.setDstImg(dst.get());
-        processor.setRenderWindow(args.renderWindow);
-        processor.process();
+    // Spatial tools read around each pixel, so ask the host for that much more source.
+    void getRegionsOfInterest(const OFX::RegionsOfInterestArguments& args,
+                              OFX::RegionOfInterestSetter& rois) override {
+        dyeline::CompiledChain chain;
+        try {
+            chain = chain_at(args.time, /*report=*/false);
+        } catch (...) {
+            return;  // render reports the error
+        }
+        if (!chain.has_spatial()) {
+            return;
+        }
+        const dyeline::RenderGeometry geometry =
+            frame_geometry(args.time, args.renderScale, src_clip_->getPixelAspectRatio());
+        const dyeline::PixelMargin margin = dyeline::spatial_margin(chain.pass, geometry);
+        OfxRectD roi = args.regionOfInterest;
+        const double mx = margin.x * static_cast<double>(geometry.canonical_x);
+        const double my = margin.y * static_cast<double>(geometry.canonical_y);
+        roi.x1 -= mx;
+        roi.x2 += mx;
+        roi.y1 -= my;
+        roi.y2 += my;
+        rois.setRegionOfInterest(*src_clip_, roi);
     }
 
     bool isIdentity(const OFX::IsIdentityArguments& args, OFX::Clip*& identity_clip,
@@ -340,58 +337,48 @@ private:
         designer_status_->setValue(status);
     }
 
-    // On a GPU render the images' pixel data are device buffers on the host's GPU: CUDA
-    // device pointers, MTLBuffers for Metal, or cl_mem buffers for OpenCL.
-    // Where this render sits in the frame, for tools that depend on position: the project's
-    // extent is the frame, positions are in canonical coordinates, and the seed follows the
-    // frame number. Buffer layout is filled in by the caller.
-    dl_image_args frame_args(const OFX::RenderArguments& args, const OFX::Image& src) {
-        dl_image_args frame{};
-        frame.width = args.renderWindow.x2 - args.renderWindow.x1;
-        frame.height = args.renderWindow.y2 - args.renderWindow.y1;
-        frame.frame_x0 = args.renderWindow.x1;
-        frame.frame_y0 = args.renderWindow.y1;
-        const double aspect = src.getPixelAspectRatio() > 0.0 ? src.getPixelAspectRatio() : 1.0;
-        frame.canonical_x = static_cast<float>(aspect / args.renderScale.x);
-        frame.canonical_y = static_cast<float>(1.0 / args.renderScale.y);
-        const OfxPointD offset = getProjectOffset();
-        const OfxPointD size = getProjectSize();
-        frame.frame_left = static_cast<float>(offset.x);
-        frame.frame_bottom = static_cast<float>(offset.y);
-        frame.frame_right = static_cast<float>(offset.x + size.x);
-        frame.frame_top = static_cast<float>(offset.y + size.y);
-        frame.seed = static_cast<int>(std::floor(args.time + 0.5));
-        return frame;
+    static dyeline::PixelRect to_rect(const OfxRectI& r) {
+        return {r.x1, r.y1, r.x2, r.y2};
     }
 
+    // Where a render sits in the frame, for tools that depend on position or reach their
+    // neighbors: the project's extent is the frame, positions are in canonical coordinates,
+    // and the seed follows the frame number. The caller fills in the window and buffers.
+    dyeline::RenderGeometry frame_geometry(double time, OfxPointD render_scale, double aspect) {
+        dyeline::RenderGeometry g;
+        if (!(aspect > 0.0)) {
+            aspect = 1.0;
+        }
+        g.canonical_x = static_cast<float>(aspect / render_scale.x);
+        g.canonical_y = static_cast<float>(1.0 / render_scale.y);
+        const OfxPointD offset = getProjectOffset();
+        const OfxPointD size = getProjectSize();
+        g.frame_left = static_cast<float>(offset.x);
+        g.frame_bottom = static_cast<float>(offset.y);
+        g.frame_right = static_cast<float>(offset.x + size.x);
+        g.frame_top = static_cast<float>(offset.y + size.y);
+        g.seed = static_cast<int>(std::floor(time + 0.5));
+        return g;
+    }
+
+    // On a GPU render the images' pixel data are device buffers on the host's GPU: CUDA
+    // device pointers, MTLBuffers for Metal, or cl_mem buffers for OpenCL.
     void render_gpu(const OFX::RenderArguments& args, const OFX::Image& src, OFX::Image& dst,
-                    const dl_image_args& frame, const dyeline::CompiledChain& chain) {
-        const OfxRectI& window = args.renderWindow;
-        const OfxRectI& src_bounds = src.getBounds();
-        const OfxRectI& dst_bounds = dst.getBounds();
-
-        dl_image_args image = frame;
-        image.src_row_floats = src.getRowBytes() / static_cast<int>(sizeof(float));
-        image.dst_row_floats = dst.getRowBytes() / static_cast<int>(sizeof(float));
-        image.src_x0 = window.x1 - src_bounds.x1;
-        image.src_y0 = window.y1 - src_bounds.y1;
-        image.dst_x0 = window.x1 - dst_bounds.x1;
-        image.dst_y0 = window.y1 - dst_bounds.y1;
-
+                    const dyeline::RenderPlan& plan, const dyeline::CompiledChain& chain) {
         std::string error;
         if (args.isEnabledCudaRender) {
-            error = dyeline::cuda::render_chain(args.pCudaStream,
-                                                static_cast<const float*>(src.getPixelData()),
-                                                static_cast<float*>(dst.getPixelData()), image,
-                                                chain.pass, chain.table.data(), chain.table.size());
+            error = dyeline::cuda::render_plan(args.pCudaStream,
+                                               static_cast<const float*>(src.getPixelData()),
+                                               static_cast<float*>(dst.getPixelData()), plan,
+                                               chain.table.data(), chain.table.size());
         } else if (args.isEnabledOpenCLRender) {
-            error = dyeline::opencl::render_chain(args.pOpenCLCmdQ, src.getPixelData(),
-                                                  dst.getPixelData(), image, chain.pass,
-                                                  chain.table.data(), chain.table.size());
+            error = dyeline::opencl::render_plan(args.pOpenCLCmdQ, src.getPixelData(),
+                                                 dst.getPixelData(), plan, chain.table.data(),
+                                                 chain.table.size());
         } else {
-            error = dyeline::metal::render_chain(args.pMetalCmdQ, src.getPixelData(),
-                                                 dst.getPixelData(), image, chain.pass,
-                                                 chain.table.data(), chain.table.size());
+            error = dyeline::metal::render_plan(args.pMetalCmdQ, src.getPixelData(),
+                                                dst.getPixelData(), plan, chain.table.data(),
+                                                chain.table.size());
         }
         if (!error.empty()) {
             show_message(OFX::Message::eMessageError, "Dyeline: " + error);

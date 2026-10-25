@@ -10,7 +10,8 @@ workflow of Magic Bullet Looks.
 **Status:** Milestone 1 in progress. The plugin renders a look, a chain of tools, on the CPU or on
 the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS) when the host
 provides one. The tools so far are Exposure, Contrast, S Curve, Hue/Saturation, Black & White, Channel
-Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade, LUT, Lens Vignette and Grain (see
+Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade, LUT, Lens Vignette, Grain,
+Diffusion Filter and Halation (see
 [docs/tools.md](docs/tools.md)), and the Look Designer is still a stand-in (see below). It is not useful for real work yet.
 
 ## Looks

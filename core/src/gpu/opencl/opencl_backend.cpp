@@ -133,12 +133,9 @@ bool available() {
     return true;
 }
 
-std::string render_chain(void* command_queue, const void* src_buffer, void* dst_buffer,
-                         const dl_image_args& args, const dl_chain& chain, const float* table,
-                         std::size_t table_floats, bool wait) {
-    if (args.width <= 0 || args.height <= 0) {
-        return {};
-    }
+std::string render_plan(void* command_queue, const void* src_buffer, void* dst_buffer,
+                        const RenderPlan& plan, const float* table, std::size_t table_floats,
+                        bool wait) {
     const Api* cl = api();
     if (cl == nullptr) {
         return "The OpenCL library could not be loaded";
@@ -165,48 +162,115 @@ std::string render_chain(void* command_queue, const void* src_buffer, void* dst_
         return error;
     }
 
-    // The chain goes in a small constant buffer: it can exceed the 1 KB of kernel arguments
-    // OpenCL 1.2 guarantees. Released right away; the queue keeps it until the work is done.
-    cl_mem chain_buffer = cl->CreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                                           sizeof(chain), const_cast<dl_chain*>(&chain), &err);
-    if (err != CL_SUCCESS) {
-        return cl_error("Could not upload the look to OpenCL", err);
-    }
-    // The tables likewise; a chain without any passes a null buffer.
-    cl_mem table_buffer = nullptr;
-    if (table_floats > 0) {
-        table_buffer = cl->CreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                                        table_floats * sizeof(float), const_cast<float*>(table),
-                                        &err);
-        if (err != CL_SUCCESS) {
-            cl->ReleaseMemObject(chain_buffer);
-            return cl_error("Could not upload the look's tables to OpenCL", err);
+    // Buffers for this render. Each is released as soon as its work is enqueued; the queue
+    // keeps it until that work is done. A look without tables or blurs passes null buffers.
+    std::vector<cl_mem> buffers;
+    std::vector<cl_kernel> kernels;
+    const auto release_all = [&] {
+        for (cl_kernel kernel : kernels) {
+            cl->ReleaseKernel(kernel);
         }
-    }
-    const auto release_buffers = [&] {
-        cl->ReleaseMemObject(chain_buffer);
-        if (table_buffer != nullptr) {
-            cl->ReleaseMemObject(table_buffer);
+        for (cl_mem buffer : buffers) {
+            cl->ReleaseMemObject(buffer);
         }
     };
-    // A kernel object per render: kernel arguments are not safe to set from several threads.
-    cl_kernel kernel = cl->CreateKernel(program, "dl_chain_kernel", &err);
-    if (err != CL_SUCCESS) {
-        release_buffers();
-        return cl_error("Could not create the OpenCL kernel", err);
-    }
-    err = cl->SetKernelArg(kernel, 0, sizeof(cl_mem), &src);
-    if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 1, sizeof(cl_mem), &dst);
-    if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 2, sizeof(args), &args);
-    if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 3, sizeof(cl_mem), &chain_buffer);
-    if (err == CL_SUCCESS) err = cl->SetKernelArg(kernel, 4, sizeof(cl_mem), &table_buffer);
+    const auto make_buffer = [&](cl_mem_flags flags, std::size_t bytes, void* host, cl_mem& out) {
+        out = nullptr;
+        if (bytes == 0) {
+            return CL_SUCCESS;
+        }
+        cl_int status = CL_SUCCESS;
+        out = cl->CreateBuffer(context, flags, bytes, host, &status);
+        if (status == CL_SUCCESS) {
+            buffers.push_back(out);
+        }
+        return status;
+    };
+
+    // The chain goes in a small constant buffer: it can exceed the 1 KB of kernel arguments
+    // OpenCL 1.2 guarantees.
+    cl_mem chain_buffer = nullptr;
+    cl_mem table_buffer = nullptr;
+    cl_mem work_buffer = nullptr;
+    err = make_buffer(CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(plan.chain),
+                      const_cast<dl_chain*>(&plan.chain), chain_buffer);
     if (err == CL_SUCCESS) {
-        const std::size_t global[2] = {static_cast<std::size_t>(args.width),
-                                       static_cast<std::size_t>(args.height)};
-        err = cl->EnqueueNDRangeKernel(queue, kernel, 2, nullptr, global, nullptr, 0, nullptr, nullptr);
+        err = make_buffer(CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, table_floats * sizeof(float),
+                          const_cast<float*>(table), table_buffer);
     }
-    cl->ReleaseKernel(kernel);
-    release_buffers();
+    if (err == CL_SUCCESS) {
+        err = make_buffer(CL_MEM_READ_WRITE, plan.work_floats * sizeof(float), nullptr, work_buffer);
+    }
+    if (err != CL_SUCCESS) {
+        release_all();
+        return cl_error("Could not allocate OpenCL memory for the look", err);
+    }
+
+    // A kernel object per render: kernel arguments are not safe to set from several threads.
+    const auto kernel = [&](const char* name, cl_kernel& out) {
+        cl_int status = CL_SUCCESS;
+        out = cl->CreateKernel(program, name, &status);
+        if (status == CL_SUCCESS) {
+            kernels.push_back(out);
+        }
+        return status;
+    };
+    cl_kernel chain_kernel = nullptr;
+    cl_kernel extract_kernel = nullptr;
+    cl_kernel box_kernel = nullptr;
+    err = kernel("dl_chain_kernel", chain_kernel);
+    if (err == CL_SUCCESS && plan.work_floats > 0) {
+        err = kernel("dl_extract_kernel", extract_kernel);
+        if (err == CL_SUCCESS) err = kernel("dl_box_kernel", box_kernel);
+    }
+    if (err != CL_SUCCESS) {
+        release_all();
+        return cl_error("Could not create the OpenCL kernels", err);
+    }
+
+    // Kernel arguments are copied when a kernel is enqueued, so one kernel object serves
+    // every pass of its kind.
+    for (const RenderPass& pass : plan.passes) {
+        if (pass.kind == PassKind::Blur) {
+            if (pass.box.lines <= 0 || pass.box.length <= 0) {
+                continue;
+            }
+            err = cl->SetKernelArg(box_kernel, 0, sizeof(cl_mem), &work_buffer);
+            if (err == CL_SUCCESS) err = cl->SetKernelArg(box_kernel, 1, sizeof(pass.box), &pass.box);
+            if (err == CL_SUCCESS) {
+                const std::size_t global[1] = {static_cast<std::size_t>(pass.box.lines)};
+                err = cl->EnqueueNDRangeKernel(queue, box_kernel, 1, nullptr, global, nullptr, 0,
+                                               nullptr, nullptr);
+            }
+        } else {
+            if (pass.image.width <= 0 || pass.image.height <= 0) {
+                continue;
+            }
+            const bool final_pass = pass.kind == PassKind::Final;
+            cl_kernel k = final_pass ? chain_kernel : extract_kernel;
+            err = cl->SetKernelArg(k, 0, sizeof(cl_mem), &src);
+            if (err == CL_SUCCESS) {
+                err = cl->SetKernelArg(k, 1, sizeof(cl_mem), final_pass ? &dst : &work_buffer);
+            }
+            if (err == CL_SUCCESS) err = cl->SetKernelArg(k, 2, sizeof(pass.image), &pass.image);
+            if (err == CL_SUCCESS) err = cl->SetKernelArg(k, 3, sizeof(cl_mem), &chain_buffer);
+            if (err == CL_SUCCESS) err = cl->SetKernelArg(k, 4, sizeof(cl_mem), &table_buffer);
+            if (err == CL_SUCCESS) {
+                err = final_pass ? cl->SetKernelArg(k, 5, sizeof(cl_mem), &work_buffer)
+                                 : cl->SetKernelArg(k, 5, sizeof(int), &pass.stop);
+            }
+            if (err == CL_SUCCESS) {
+                const std::size_t global[2] = {static_cast<std::size_t>(pass.image.width),
+                                               static_cast<std::size_t>(pass.image.height)};
+                err = cl->EnqueueNDRangeKernel(queue, k, 2, nullptr, global, nullptr, 0, nullptr,
+                                               nullptr);
+            }
+        }
+        if (err != CL_SUCCESS) {
+            break;
+        }
+    }
+    release_all();
     if (err != CL_SUCCESS) {
         return cl_error("OpenCL kernel failed to launch", err);
     }
