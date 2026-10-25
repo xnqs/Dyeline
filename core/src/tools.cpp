@@ -311,6 +311,95 @@ void encode_two_strip(const ParamValues& v, dl_op& op) {
     set_matrix(m, op);
 }
 
+// The selective tools (see selective.h). A tint's stops are the 3-Way Grade's: a direction
+// around the grey axis with its luminance-weighted mean taken away.
+void tint_stops(double hue_degrees, double amount, double out[3]) {
+    const double hue = hue_degrees * kPi / 180.0;
+    double mean = 0.0;
+    for (int k = 0; k < 3; ++k) {
+        out[k] = std::cos(hue - k * 2.0 * kPi / 3.0);
+        mean += kLumaWeights[k] * out[k];
+    }
+    for (int k = 0; k < 3; ++k) {
+        out[k] = (out[k] - mean) * amount * kThreeWayMaxStops;
+    }
+}
+
+void set_gradient(const double stops[3], const ParamValues& v, std::size_t geometry, dl_op& op) {
+    op.tool = DL_OP_GRADIENT;
+    for (int k = 0; k < 3; ++k) {
+        op.p[k] = static_cast<float>(stops[k]);
+    }
+    const double angle = v[geometry + 2] * kPi / 180.0;
+    op.p[3] = static_cast<float>(v[geometry]);
+    op.p[4] = static_cast<float>(v[geometry + 1]);
+    op.p[5] = static_cast<float>(std::sin(angle));
+    op.p[6] = static_cast<float>(std::cos(angle));
+    op.p[7] = static_cast<float>(v[geometry + 3]);
+}
+
+// Gradient Tint: hue, amount, then the gradient's center x, y, angle and softness.
+void encode_gradient_tint(const ParamValues& v, dl_op& op) {
+    double stops[3];
+    tint_stops(v[0], v[1], stops);
+    set_gradient(stops, v, 2, op);
+}
+
+bool tint_is_identity(const ParamValues& v) {
+    return v[1] == 0.0;
+}
+
+// Grad Exposure: stops, then the gradient.
+void encode_grad_exposure(const ParamValues& v, dl_op& op) {
+    const double stops[3] = {v[0], v[0], v[0]};
+    set_gradient(stops, v, 1, op);
+}
+
+// Spot Exposure: stops, center x, y, size and softness.
+void encode_spot_exposure(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_SPOT;
+    for (int k = 0; k < 3; ++k) {
+        op.p[k] = static_cast<float>(v[0]);
+    }
+    for (int i = 0; i < 4; ++i) {
+        op.p[3 + i] = static_cast<float>(v[1 + static_cast<std::size_t>(i)]);
+    }
+}
+
+// Fill Light: amount in stops, pivot, tint hue and tint amount; Spot Fill adds a spot's center
+// x, y, size and softness. The tint leans the fill's color without changing its brightness.
+void encode_fill(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_FILL;
+    double tint[3];
+    tint_stops(v[2], v[3], tint);
+    for (int k = 0; k < 3; ++k) {
+        op.p[k] = static_cast<float>(v[0] + tint[k]);
+        op.p[4 + k] = static_cast<float>(kLumaWeights[k]);
+    }
+    op.p[3] = static_cast<float>(v[1]);
+    op.p[7] = v.size() > 4 ? 1.0f : 0.0f;
+    for (std::size_t i = 4; i < v.size(); ++i) {
+        op.p[4 + i] = static_cast<float>(v[i]);
+    }
+}
+
+bool fill_is_identity(const ParamValues& v) {
+    return v[0] == 0.0 && v[3] == 0.0;
+}
+
+ParamSpec center_x() {
+    return {"center-x", "Center X", 0.0, -1.0, 1.0};
+}
+
+ParamSpec center_y(double default_value = 0.0) {
+    return {"center-y", "Center Y", default_value, -1.0, 1.0};
+}
+
+const std::vector<HandleSpec> kGradientHandles = {{HandleKind::Point, "center-x", "center-y"},
+                                                  {HandleKind::Angle, "angle"}};
+const std::vector<HandleSpec> kSpotHandles = {{HandleKind::Point, "center-x", "center-y"},
+                                              {HandleKind::Radius, "size"}};
+
 // Lens Vignette: Amount in stops, reached Softness past Size (distances are 1 at the corners).
 void encode_lens_vignette(const ParamValues& v, dl_op& op) {
     op.tool = DL_OP_LENS_VIGNETTE;
@@ -459,6 +548,43 @@ std::vector<ToolSpec> make_tools() {
     tools.push_back({"two-strip", "2-Strip", ToolCategory::Camera, 1,
                      {{"amount", "Amount", 1.0, 0.0, 1.0}},
                      nullptr, encode_two_strip, amount_is_zero, nullptr});
+    tools.push_back({"gradient-tint", "Gradient Tint", ToolCategory::Matte, 1,
+                     {{"hue", "Hue", 210.0, 0.0, 360.0},
+                      {"amount", "Amount", 0.5, 0.0, 1.0},
+                      center_x(), center_y(),
+                      {"angle", "Angle", 0.0, -180.0, 180.0},
+                      {"softness", "Softness", 0.8, 0.01, 2.0}},
+                     nullptr, encode_gradient_tint, tint_is_identity, nullptr, nullptr, false,
+                     kGradientHandles});
+    tools.push_back({"grad-exposure", "Grad Exposure", ToolCategory::Matte, 1,
+                     {{"stops", "Exposure", -1.0, -4.0, 4.0},
+                      center_x(), center_y(),
+                      {"angle", "Angle", 0.0, -180.0, 180.0},
+                      {"softness", "Softness", 0.8, 0.01, 2.0}},
+                     nullptr, encode_grad_exposure, exposure_is_identity, nullptr, nullptr, false,
+                     kGradientHandles});
+    tools.push_back({"spot-exposure", "Spot Exposure", ToolCategory::Subject, 1,
+                     {{"stops", "Exposure", 1.0, -4.0, 4.0},
+                      center_x(), center_y(),
+                      {"size", "Size", 0.3, 0.0, 2.0},
+                      {"softness", "Softness", 0.3, 0.01, 2.0}},
+                     nullptr, encode_spot_exposure, exposure_is_identity, nullptr, nullptr, false,
+                     kSpotHandles});
+    tools.push_back({"fill-light", "Fill Light", ToolCategory::Subject, 1,
+                     {{"amount", "Amount", 0.5, 0.0, 2.0},
+                      {"pivot", "Pivot", 0.18, 0.001, 10.0},
+                      {"tint-hue", "Tint Hue", 40.0, 0.0, 360.0},
+                      {"tint-amount", "Tint Amount", 0.0, 0.0, 0.5}},
+                     nullptr, encode_fill, fill_is_identity, nullptr});
+    tools.push_back({"spot-fill", "Spot Fill", ToolCategory::Subject, 1,
+                     {{"amount", "Amount", 0.75, 0.0, 2.0},
+                      {"pivot", "Pivot", 0.18, 0.001, 10.0},
+                      {"tint-hue", "Tint Hue", 40.0, 0.0, 360.0},
+                      {"tint-amount", "Tint Amount", 0.0, 0.0, 0.5},
+                      center_x(), center_y(),
+                      {"size", "Size", 0.3, 0.0, 2.0},
+                      {"softness", "Softness", 0.3, 0.01, 2.0}},
+                     nullptr, encode_fill, fill_is_identity, nullptr, nullptr, false, kSpotHandles});
     tools.push_back({"lens-vignette", "Lens Vignette", ToolCategory::Lens, 1,
                      {{"amount", "Amount", -1.0, -4.0, 4.0},
                       {"size", "Size", 0.5, 0.0, 2.0},
@@ -466,7 +592,8 @@ std::vector<ToolSpec> make_tools() {
                       {"roundness", "Roundness", 1.0, 0.0, 1.0},
                       {"center-x", "Center X", 0.0, -1.0, 1.0},
                       {"center-y", "Center Y", 0.0, -1.0, 1.0}},
-                     nullptr, encode_lens_vignette, lens_vignette_is_identity, nullptr, nullptr, false});
+                     nullptr, encode_lens_vignette, lens_vignette_is_identity, nullptr, nullptr, false,
+                     {{HandleKind::Point, "center-x", "center-y"}}});
     tools.push_back({"grain", "Grain", ToolCategory::Camera, 1,
                      {{"amount", "Amount", 0.3, 0.0, 1.0},
                       {"size", "Size", 1.5, 0.5, 8.0},

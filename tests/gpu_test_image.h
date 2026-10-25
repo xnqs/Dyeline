@@ -102,13 +102,23 @@ inline CompiledChain test_chain() {
     return chain;
 }
 
-// A chain without table data, so the backends' path for a look with no LUT runs too.
+// A chain without table data, so the backends' path for a look with no LUT runs too. It
+// holds the tools that depend on where a pixel is, beside Lens Vignette and Grain above.
 inline CompiledChain table_free_chain() {
     Look look;
-    ToolEntry entry;
-    entry.tool = "exposure";
-    entry.params = {{"stops", 0.7}};
-    look.chain.push_back(entry);
+    auto add = [&](const char* id, nlohmann::json params) {
+        ToolEntry entry;
+        entry.tool = id;
+        entry.strength = 0.9;
+        entry.params = std::move(params);
+        look.chain.push_back(std::move(entry));
+    };
+    add("exposure", {{"stops", 0.7}});
+    add("gradient-tint", {{"hue", 200.0}, {"amount", 0.8}, {"angle", 30.0}, {"softness", 0.5}});
+    add("grad-exposure", {{"stops", -1.2}, {"center-y", 0.2}, {"angle", -100.0}});
+    add("spot-exposure", {{"stops", 0.8}, {"center-x", 0.3}, {"size", 0.2}, {"softness", 0.4}});
+    add("fill-light", {{"amount", 0.9}, {"tint-amount", 0.3}});
+    add("spot-fill", {{"amount", 1.5}, {"center-x", -0.4}, {"center-y", 0.1}, {"size", 0.3}});
     CompiledChain chain;
     std::string error;
     compile_chain(look, 1.0, chain, error);

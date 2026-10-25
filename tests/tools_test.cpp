@@ -51,7 +51,8 @@ TEST(Tools, AllAreRegistered) {
     for (const char* id : {"exposure", "contrast", "s-curve", "hue-saturation", "black-white",
                            "channel-mixer", "shadows-highlights", "highlight-shoulder", "three-way", "lut",
                            "lens-vignette", "grain", "diffusion", "halation", "film-negative", "film-print", "bleach-bypass", "two-strip",
-                           "telecine-net"}) {
+                           "telecine-net", "gradient-tint", "grad-exposure", "spot-exposure",
+                           "fill-light", "spot-fill"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }
@@ -592,6 +593,101 @@ TEST(TwoStrip, KeepsRedAndAveragesGreenAndBlue) {
     EXPECT_NEAR(half[1], 0.3f, 1e-6f);
     EXPECT_NEAR(half[2], 0.5f, 1e-6f);
     EXPECT_TRUE(skipped(tool("two-strip", {{"amount", 0.0}})));
+}
+
+// The selective tools, over a 40 x 20 frame of grey: the center is (20, 10), and the half
+// diagonal is sqrt(20^2 + 10^2), about 22.4 pixels.
+
+std::vector<float> frame_at(const ToolEntry& entry) {
+    return run_frame(entry, 40, 20);
+}
+
+float pixel(const std::vector<float>& red, int x, int y) {
+    return red[static_cast<std::size_t>(y) * 40 + x];
+}
+
+TEST(GradExposure, ChangesOneSideOfTheLine) {
+    // Angle 0: the change lies up, across a soft band through the middle.
+    const auto up = frame_at(tool("grad-exposure", {{"stops", -1.0}, {"softness", 0.2}}));
+    EXPECT_NEAR(pixel(up, 20, 19), 0.09f, 1e-4f);   // the top row (y is up)
+    EXPECT_NEAR(pixel(up, 20, 0), 0.18f, 1e-4f);    // the bottom row
+    EXPECT_NEAR(pixel(up, 3, 19), pixel(up, 36, 19), 1e-6f);  // even along the line
+    // Angle 90: the change lies right; a center moved right moves the line.
+    const auto right = frame_at(tool("grad-exposure", {{"stops", 1.0}, {"angle", 90.0},
+                                                       {"center-x", 0.5}, {"softness", 0.1}}));
+    EXPECT_NEAR(pixel(right, 39, 10), 0.36f, 1e-4f);
+    EXPECT_NEAR(pixel(right, 25, 10), 0.18f, 1e-4f);  // left of x = 30
+    EXPECT_TRUE(skipped(tool("grad-exposure", {{"stops", 0.0}})));
+}
+
+TEST(GradientTint, TintsWithoutChangingLuminance) {
+    Look look;
+    look.chain = {tool("gradient-tint", {{"hue", 210.0}, {"amount", 1.0}, {"softness", 0.1}})};
+    dyeline::CompiledChain chain;
+    std::string error;
+    ASSERT_TRUE(dyeline::compile_chain(look, 1.0, chain, error)) << error;
+    // One pixel at the top of a 2 x 2 frame, well inside the tinted side.
+    std::vector<float> frame(12, 0.18f);
+    dl_image_args args{};
+    args.width = 2;
+    args.height = 2;
+    args.channels = 3;
+    args.src_row_floats = 6;
+    args.dst_row_floats = 6;
+    args.src_width = 2;
+    args.src_height = 2;
+    args.canonical_x = 1.0f;
+    args.canonical_y = 1.0f;
+    args.frame_right = 2.0f;
+    args.frame_top = 2.0f;
+    dyeline::render_chain_window(frame.data(), frame.data(), args, chain);
+    const std::vector<float> top(frame.begin() + 6, frame.begin() + 9);
+    const std::vector<float> bottom(frame.begin(), frame.begin() + 3);
+    EXPECT_GT(top[2], top[0]);  // blue-ish
+    EXPECT_NEAR(std::log2(luma({top[0], top[1], top[2], 1.0f}) / 0.18f), 0.0f, 0.15f);
+    EXPECT_NEAR(bottom[0], 0.18f, 1e-4f);
+    EXPECT_NEAR(bottom[2], 0.18f, 1e-4f);
+    EXPECT_TRUE(skipped(tool("gradient-tint", {{"amount", 0.0}})));
+}
+
+TEST(SpotExposure, BrightensInsideTheSpotOnly) {
+    const auto out = frame_at(tool("spot-exposure", {{"stops", 1.0}, {"size", 0.2},
+                                                     {"softness", 0.1}}));
+    EXPECT_NEAR(pixel(out, 20, 10), 0.36f, 1e-4f);
+    EXPECT_NEAR(pixel(out, 0, 0), 0.18f, 1e-4f);
+    EXPECT_GT(pixel(out, 24, 10), pixel(out, 28, 10));  // fading out
+    const auto moved = frame_at(tool("spot-exposure", {{"stops", 1.0}, {"size", 0.2},
+                                                       {"softness", 0.1}, {"center-x", -0.5},
+                                                       {"center-y", 0.5}}));
+    EXPECT_NEAR(pixel(moved, 10, 15), 0.36f, 1e-3f);
+    EXPECT_NEAR(pixel(moved, 20, 10), 0.18f, 1e-4f);
+}
+
+TEST(FillLight, LiftsShadowsAndLeavesHighlights) {
+    const ToolEntry fill = tool("fill-light", {{"amount", 1.0}});
+    EXPECT_NEAR(luma(run(fill, grey(0.18f / 16.0f))), 0.18f / 8.0f, 1e-4f);  // a full stop
+    EXPECT_NEAR(luma(run(fill, grey(0.72f))), 0.72f, 1e-6f);  // two stops over: untouched
+    float previous = 0.0f;
+    for (float stops = -10.0f; stops <= 4.0f; stops += 0.25f) {
+        const float out = luma(run(tool("fill-light", {{"amount", 2.0}}),
+                                   grey(0.18f * std::exp2(stops))));
+        EXPECT_GT(out, previous) << stops;  // never reverses, even at full amount
+        previous = out;
+    }
+    // A tint leans the fill's color.
+    const auto warm = run(tool("fill-light", {{"amount", 1.0}, {"tint-hue", 30.0},
+                                              {"tint-amount", 0.5}}),
+                          grey(0.02f));
+    EXPECT_GT(warm[0], warm[2]);
+    EXPECT_TRUE(skipped(tool("fill-light", {{"amount", 0.0}})));
+}
+
+TEST(SpotFill, LiftsShadowsInsideTheSpot) {
+    const auto out = run_frame(tool("spot-fill", {{"amount", 1.0}, {"size", 0.2},
+                                                  {"softness", 0.1}}),
+                               40, 20, 0, 0.01f);
+    EXPECT_NEAR(pixel(out, 20, 10), 0.02f, 1e-4f);
+    EXPECT_NEAR(pixel(out, 0, 0), 0.01f, 1e-6f);
 }
 
 }  // namespace

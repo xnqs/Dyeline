@@ -204,6 +204,68 @@ cyan-greens, with no true blues, yellows or purples.
 | --- | --- | --- | --- |
 | `amount` | 1 | 0 to 1 | Mix from the original (0) to the full process (1). |
 
+## Gradient Tint (`gradient-tint`)
+
+Tints one side of a line across the frame, fading across a soft band, like a graduated color
+filter on the lens: a blue sky over a neutral foreground, say. The tint shifts color without
+brightening or darkening (the 3-Way Grade's tint). Positions are measured as for Lens Vignette:
+the center is a fraction of the frame's half width and half height from its middle, and
+Softness is a share of the frame's half diagonal. The designer shows handles for the center
+and the angle.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `hue` | 210 | 0 to 360 | The tint's hue, in degrees. |
+| `amount` | 0.5 | 0 to 1 | Tint strength. |
+| `center-x`, `center-y` | 0 | -1 to 1 | A point on the line (y is up). |
+| `angle` | 0 | -180 to 180 | Which side is tinted, in degrees clockwise from up: 0 tints the top. |
+| `softness` | 0.8 | 0.01 to 2 | How wide the fade across the line is. |
+
+## Grad Exposure (`grad-exposure`)
+
+Like Gradient Tint, but adds or takes away light: a graduated neutral density filter.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `stops` | -1 | -4 to 4 | Stops on the changed side. Negative darkens. |
+| `center-x`, `center-y`, `angle`, `softness` | | | As for Gradient Tint. |
+
+## Spot Exposure (`spot-exposure`)
+
+Brightens or darkens a round spot, fading out beyond it: lifting a face, or burning down a
+corner. The spot is a circle whatever the frame's shape. The designer shows handles for the
+center and the size.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `stops` | 1 | -4 to 4 | Stops inside the spot. |
+| `center-x`, `center-y` | 0 | -1 to 1 | The spot's center (y is up). |
+| `size` | 0.3 | 0 to 2 | The spot's radius, 1 being the distance to a corner. |
+| `softness` | 0.3 | 0.01 to 2 | How far beyond Size it fades out. |
+
+## Fill Light (`fill-light`)
+
+Adds light to the shadows, as a fill light would: full Amount three stops under the pivot and
+below, fading to nothing a stop over it, so highlights stay as they are. A brighter pixel
+always stays brighter. The tint leans the fill's color, warm or cool, without changing how
+much it brightens.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 0.5 | 0 to 2 | Stops added to the deep shadows. |
+| `pivot` | 0.18 | 0.001 to 10 | Middle grey, where the fill has faded to about a sixth. |
+| `tint-hue` | 40 | 0 to 360 | The fill's hue. |
+| `tint-amount` | 0 | 0 to 0.5 | How colored the fill is. |
+
+## Spot Fill (`spot-fill`)
+
+Fill Light inside a round spot only, as Spot Exposure places it.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount`, `pivot`, `tint-hue`, `tint-amount` | 0.75, 0.18, 40, 0 | | As for Fill Light. |
+| `center-x`, `center-y`, `size`, `softness` | 0, 0, 0.3, 0.3 | | As for Spot Exposure. |
+
 ## Lens Vignette (`lens-vignette`)
 
 Darkens the frame toward its edges, the way a lens loses light away from its center, or

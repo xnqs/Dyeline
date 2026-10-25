@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <future>
 #include <map>
@@ -25,6 +26,7 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
 #include "imgui_stdlib.h"
+#include "handles.h"
 #include "preview.h"
 #include "scopes.h"
 #include "thumbnails.h"
@@ -113,8 +115,9 @@ private:
     int height_ = 0;
 };
 
-// Draws `texture` as large as fits in `size` at the cursor, keeping its shape, centered.
-void fit_image(const Texture& texture, float aspect, ImVec2 size) {
+// Draws `texture` as large as fits in `size` at the cursor, keeping its shape, centered, and
+// says where it went.
+ScreenRect fit_image(const Texture& texture, float aspect, ImVec2 size) {
     float w = size.x;
     float h = w / aspect;
     if (h > size.y) {
@@ -125,6 +128,7 @@ void fit_image(const Texture& texture, float aspect, ImVec2 size) {
     ImGui::Dummy(size);
     const ImVec2 corner(at.x + (size.x - w) * 0.5f, at.y + (size.y - h) * 0.5f);
     ImGui::GetWindowDrawList()->AddImage(texture.ref(), corner, ImVec2(corner.x + w, corner.y + h));
+    return {corner.x, corner.y, w, h};
 }
 
 class App {
@@ -169,6 +173,7 @@ private:
     void toggle_favorite(const std::string& key);
     void draw_tool();
     void draw_preview(float height);
+    void draw_handles(const ScreenRect& rect);
     void request_preview(bool allow_draft);
     void draw_footer();
     void draw_close_prompt();
@@ -878,7 +883,11 @@ void App::draw_preview(float height) {
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
     const float scopes_width = show_scopes_ ? std::min(avail.x * 0.34f, avail.y * 1.1f) : 0.0f;
     ImGui::BeginGroup();
-    fit_image(image_, aspect, ImVec2(avail.x - scopes_width - (show_scopes_ ? spacing : 0.0f), avail.y));
+    const ScreenRect frame_rect =
+        fit_image(image_, aspect, ImVec2(avail.x - scopes_width - (show_scopes_ ? spacing : 0.0f), avail.y));
+    if (!show_original_) {
+        draw_handles(frame_rect);
+    }
     ImGui::EndGroup();
     if (show_scopes_ && parade_.ready() && vectorscope_.ready()) {
         ImGui::SameLine(0.0f, spacing);
@@ -891,6 +900,89 @@ void App::draw_preview(float height) {
         ImGui::EndGroup();
     }
     (void)height;
+}
+
+// The selected tool's on-image handles: a center to drag, and a ring for its size or an
+// arrow for its angle. Dragging one sets its parameters like their sliders do, as one undo
+// step per drag.
+void App::draw_handles(const ScreenRect& rect) {
+    const ToolSpec* tool = editor_.tool_at(selected_);
+    if (tool == nullptr || tool->handles.empty() || tool->handles.front().kind != HandleKind::Point) {
+        return;
+    }
+    const auto spec_of = [tool](const char* id) -> const ParamSpec* {
+        for (const ParamSpec& spec : tool->params) {
+            if (std::strcmp(spec.id, id) == 0) {
+                return &spec;
+            }
+        }
+        return nullptr;
+    };
+    const HandleSpec& point = tool->handles.front();
+    const ParamSpec* x_spec = spec_of(point.x);
+    const ParamSpec* y_spec = spec_of(point.y);
+    if (x_spec == nullptr || y_spec == nullptr) {
+        return;
+    }
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const ImU32 color = IM_COL32(255, 255, 255, 220);
+    const ImU32 shadow = IM_COL32(0, 0, 0, 160);
+    const float knob = 6.0f;
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    const ScreenPoint center =
+        center_to_screen(rect, editor_.param(selected_, *x_spec), editor_.param(selected_, *y_spec));
+    const ImVec2 c(center.x, center.y);
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const ScreenPoint at{mouse.x, mouse.y};
+
+    // An invisible button over a knob, so it takes the drag before anything under it.
+    const auto drag_knob = [&](const char* id, ImVec2 position) {
+        ImGui::SetCursorScreenPos(ImVec2(position.x - 2.0f * knob, position.y - 2.0f * knob));
+        ImGui::InvisibleButton(id, ImVec2(4.0f * knob, 4.0f * knob));
+        const bool active = ImGui::IsItemActive();
+        if (ImGui::IsItemDeactivated()) {
+            editor_.end_gesture();
+        }
+        const bool hovered = ImGui::IsItemHovered() || active;
+        draw->AddCircleFilled(position, knob + 1.5f, shadow);
+        draw->AddCircleFilled(position, hovered ? knob + 1.0f : knob, color);
+        return active && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f);
+    };
+
+    for (std::size_t i = 1; i < tool->handles.size(); ++i) {
+        const HandleSpec& handle = tool->handles[i];
+        const ParamSpec* spec = spec_of(handle.x);
+        if (spec == nullptr) {
+            continue;
+        }
+        const double value = editor_.param(selected_, *spec);
+        ImGui::PushID(static_cast<int>(i));
+        if (handle.kind == HandleKind::Radius) {
+            const float r = distance_to_screen(rect, value);
+            draw->AddCircle(c, r, shadow, 0, 3.0f);
+            draw->AddCircle(c, r, color, 0, 1.5f);
+            if (drag_knob("##radius", ImVec2(c.x + r, c.y))) {
+                editor_.set_param(selected_, *spec, screen_distance(rect, center, at));
+            }
+        } else if (handle.kind == HandleKind::Angle) {
+            const ScreenPoint tip = angle_tip(rect, center, value);
+            draw->AddLine(c, ImVec2(tip.x, tip.y), shadow, 3.0f);
+            draw->AddLine(c, ImVec2(tip.x, tip.y), color, 1.5f);
+            if (drag_knob("##angle", ImVec2(tip.x, tip.y))) {
+                editor_.set_param(selected_, *spec, screen_angle(center, at));
+            }
+        }
+        ImGui::PopID();
+    }
+    if (drag_knob("##center", c)) {
+        double cx = 0.0;
+        double cy = 0.0;
+        screen_to_center(rect, at, cx, cy);
+        editor_.set_params(selected_, {{x_spec, cx}, {y_spec, cy}});
+    }
+    // Back where the preview left the cursor, with an empty item so ImGui knows it's meant.
+    ImGui::SetCursorScreenPos(cursor);
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
 void App::draw_footer() {

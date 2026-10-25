@@ -88,6 +88,7 @@ TEST(OpenCLBackend, MatchesCpuReference) {
 
     const dyeline::CompiledChain plain = dyeline::test::table_free_chain();
     ASSERT_TRUE(plain.table.empty());
+    ASSERT_EQ(plain.pass.count, 6);
     const dyeline::RenderPlan plain_plan = dyeline::plan_render(plain.pass, geometry);
     ASSERT_EQ(plain_plan.work_floats, 0u);
     const std::vector<float> plain_expected = dyeline::test::cpu_reference(src, plain_plan, plain);
