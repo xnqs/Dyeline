@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+Milestone 3: lens tools and polish.
+
+### New tools
+
+- **Lens Distortion**: barrel and pincushion distortion from the radial Brown-Conrady model,
+  with an Edges term for the corners, Zoom to fill the frame again, and a movable center.
+- **Chromatic Aberration**: lateral (red and blue scaled against green toward the edges) and
+  longitudinal (red and blue softened, for colored fringes on hard edges), with a movable
+  center.
+- A bundled look that uses them, **Old Glass**.
+
+### Plugin
+
+- Tools can now move pixels, not only recolor them: the render plan renders what comes before
+  a warp to an image and reads it back through the warp, on the CPU and every GPU backend.
+  The plugin asks the host for exactly the source a warp reads.
+
 ## 0.5.0 beta
 
 Milestone 2: film and selective tools. Looks made with 0.1 load unchanged.

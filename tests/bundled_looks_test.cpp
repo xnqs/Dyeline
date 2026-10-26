@@ -40,7 +40,7 @@ TEST(BundledLooks, EveryLookReadsAndChangesTheFrame) {
     std::vector<std::string> problems;
     const auto looks = dyeline::scan_library({{DYELINE_LOOKS_DIR, true}}, problems);
     EXPECT_TRUE(problems.empty()) << problems.front();
-    EXPECT_EQ(looks.size(), 22u);
+    EXPECT_EQ(looks.size(), 23u);
 
     const dyeline::Frame frame = test_frame();
     dyeline::designer::PreviewRequest original;

@@ -53,7 +53,7 @@ TEST(Tools, AllAreRegistered) {
                            "lens-vignette", "grain", "diffusion", "halation", "film-negative", "film-print", "bleach-bypass", "two-strip",
                            "telecine-net", "gradient-tint", "grad-exposure", "spot-exposure",
                            "fill-light", "spot-fill", "four-way", "blockbuster", "color-filter",
-                           "duotone", "local-contrast"}) {
+                           "duotone", "local-contrast", "lens-distortion", "chromatic-aberration"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }

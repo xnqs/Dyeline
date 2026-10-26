@@ -11,6 +11,13 @@
 // runs the chain up to that tool over a region wider than the window and writes what the tool
 // spreads to a `work` buffer; separable box blurs (dl_box_line) blur it there; and the final
 // pass, running the whole chain, reads the blurred image back where the tool sits.
+//
+// Warp tools (Lens Distortion, Chromatic Aberration) move pixels, so what comes before them
+// has to exist as an image they can read anywhere. A stage pass runs the chain up to the warp
+// over the region it reads and writes that image, premultiplied RGBA, to the work buffer.
+// Every pass after it (extracts for later spatial tools, the next stage, the final pass) reads
+// that image through the warp with bilinear filtering, instead of the source, and runs only
+// the ops after the warp.
 #ifndef DYELINE_KERNELS_CHAIN_KERNEL_H
 #define DYELINE_KERNELS_CHAIN_KERNEL_H
 
@@ -26,6 +33,7 @@
 #include "tools/halation.h"
 #include "tools/highlight_shoulder.h"
 #include "tools/lens_vignette.h"
+#include "tools/lens_warp.h"
 #include "tools/local_contrast.h"
 #include "tools/lut.h"
 #include "tools/matrix.h"
@@ -59,6 +67,8 @@
 #define DL_OP_FILL 18
 #define DL_OP_DUOTONE 19
 #define DL_OP_LOCAL_CONTRAST 20
+#define DL_OP_LENS_DISTORTION 21
+#define DL_OP_CHROMATIC_ABERRATION 22
 
 // Spatial ops keep their blur size in their last parameter, for the host's render plan.
 #define DL_OP_BLUR_SIZE (DL_OP_PARAMS - 1)
@@ -112,7 +122,17 @@ struct dl_image_args {
     float frame_right;
     float frame_top;
     int seed;              // differs from frame to frame
-    int work_offset;       // extract passes: where they write in the work buffer, in floats
+    int work_offset;       // extract and stage passes: where they write in the work buffer
+    // Passes after a warp: 1 + the warp op's index, or 0 for passes that read the source.
+    // They read the warp's input image, `stage_width` x `stage_height` premultiplied RGBA
+    // pixels from host pixel (stage_x0, stage_y0), at `stage_offset` floats into the work
+    // buffer, and run the ops after the warp.
+    int stage_op;
+    int stage_offset;
+    int stage_x0;
+    int stage_y0;
+    int stage_width;
+    int stage_height;
 };
 
 // One box blur over lines of RGB pixels in the work buffer. Line `i` reads from
@@ -133,6 +153,32 @@ struct dl_box_args {
 
 DL_DEVICE int dl_is_spatial(int tool) {
     return tool == DL_OP_DIFFUSION || tool == DL_OP_HALATION || tool == DL_OP_LOCAL_CONTRAST;
+}
+
+DL_DEVICE int dl_is_warp(int tool) {
+    return tool == DL_OP_LENS_DISTORTION || tool == DL_OP_CHROMATIC_ABERRATION;
+}
+
+// How many taps a warp op reads channel `channel` (0 red, 1 green, 2 blue) through.
+DL_DEVICE int dl_warp_taps(DL_CONSTANT const struct dl_op* op, int channel) {
+    if (op->tool == DL_OP_CHROMATIC_ABERRATION) {
+        return dl_chromatic_aberration_taps(op->p, channel);
+    }
+    return 1;
+}
+
+// Where, in canonical coordinates, a warp op reads tap `tap` of channel `channel` for the
+// pixel at `at`. Each tap counts equally.
+DL_DEVICE void dl_warp_source(DL_CONSTANT const struct dl_op* op, struct dl_place at, int channel,
+                              int tap, DL_PRIVATE float* sx, DL_PRIVATE float* sy) {
+    if (op->tool == DL_OP_CHROMATIC_ABERRATION) {
+        dl_chromatic_aberration_source(op->p, op->strength, at, channel, tap, sx, sy);
+    } else if (op->tool == DL_OP_LENS_DISTORTION) {
+        dl_lens_distortion_source(op->p, op->strength, at, sx, sy);
+    } else {
+        *sx = at.x;
+        *sy = at.y;
+    }
 }
 
 DL_DEVICE dl_float4 dl_mix(dl_float4 a, dl_float4 b, float t) {
@@ -210,21 +256,23 @@ DL_DEVICE dl_float4 dl_extract_op(dl_float4 c, DL_CONSTANT const struct dl_op* o
     }
 }
 
-// Runs the first `count` ops of the chain on one straight-alpha color. Alpha is never
-// changed.
-DL_DEVICE dl_float4 dl_run_ops(dl_float4 c, DL_CONSTANT const struct dl_chain* chain, int count,
-                               DL_GLOBAL const float* table, DL_GLOBAL const float* work,
+// Runs ops `first` to `end` - 1 of the chain on one straight-alpha color. Alpha is never
+// changed. Warp ops do their work where their output is read, so here they pass through.
+DL_DEVICE dl_float4 dl_run_ops(dl_float4 c, DL_CONSTANT const struct dl_chain* chain, int first,
+                               int end, DL_GLOBAL const float* table, DL_GLOBAL const float* work,
                                struct dl_place at) {
-    for (int i = 0; i < count; ++i) {
+    for (int i = first; i < end; ++i) {
         DL_CONSTANT const struct dl_op* op = &chain->ops[i];
-        c = dl_mix(c, dl_run_op(c, op, table, work, at), op->strength);
+        if (!dl_is_warp(op->tool)) {
+            c = dl_mix(c, dl_run_op(c, op, table, work, at), op->strength);
+        }
     }
     return c;
 }
 
 // Reads the source pixel under window pixel (x, y), as straight color, and says where it is.
 // Tools see straight (unpremultiplied) color, so a non-linear tool treats a soft edge like the
-// solid pixels next to it.
+// solid pixels next to it. An alpha-only source reads as transparent black at its alpha.
 DL_DEVICE dl_float4 dl_read_source(DL_GLOBAL const float* src, int x, int y, struct dl_image_args a,
                                    DL_PRIVATE struct dl_place* at,
                                    DL_PRIVATE int* unpremultiplied) {
@@ -233,8 +281,9 @@ DL_DEVICE dl_float4 dl_read_source(DL_GLOBAL const float* src, int x, int y, str
     sx = sx < 0 ? 0 : (sx >= a.src_width ? a.src_width - 1 : sx);
     sy = sy < 0 ? 0 : (sy >= a.src_height ? a.src_height - 1 : sy);
     const int si = sy * a.src_row_floats + sx * a.channels;
-    dl_float4 c = dl_make_float4(src[si], src[si + 1], src[si + 2],
-                                 a.channels == 4 ? src[si + 3] : 1.0f);
+    dl_float4 c = a.channels == 1 ? dl_make_float4(0.0f, 0.0f, 0.0f, src[si])
+                                  : dl_make_float4(src[si], src[si + 1], src[si + 2],
+                                                   a.channels == 4 ? src[si + 3] : 1.0f);
     *unpremultiplied = a.channels == 4 && a.premultiplied && c.w > 0.0f;
     if (*unpremultiplied) {
         c = dl_make_float4(c.x / c.w, c.y / c.w, c.z / c.w, c.w);
@@ -251,12 +300,71 @@ DL_DEVICE dl_float4 dl_read_source(DL_GLOBAL const float* src, int x, int y, str
     return c;
 }
 
+// One channel of a stage image, bilinearly filtered at canonical position (sx, sy), with its
+// alpha: adds both, times `weight`, to *value and *alpha. Pixels outside the frame are
+// transparent black, so a warp that reads past the frame's edges shows nothing there.
+DL_DEVICE void dl_stage_tap(DL_GLOBAL const float* work, struct dl_image_args a, int channel,
+                            float sx, float sy, float weight, DL_PRIVATE float* value,
+                            DL_PRIVATE float* alpha) {
+    const float fx = sx / a.canonical_x - 0.5f;
+    const float fy = sy / a.canonical_y - 0.5f;
+    const float x0 = dl_floor(fx);
+    const float y0 = dl_floor(fy);
+    const float tx = fx - x0;
+    const float ty = fy - y0;
+    for (int j = 0; j < 2; ++j) {
+        for (int i = 0; i < 2; ++i) {
+            const int px = (int)x0 + i;
+            const int py = (int)y0 + j;
+            const float centre_x = ((float)px + 0.5f) * a.canonical_x;
+            const float centre_y = ((float)py + 0.5f) * a.canonical_y;
+            if (centre_x < a.frame_left || centre_x > a.frame_right || centre_y < a.frame_bottom ||
+                centre_y > a.frame_top) {
+                continue;
+            }
+            int lx = px - a.stage_x0;
+            int ly = py - a.stage_y0;
+            lx = lx < 0 ? 0 : (lx >= a.stage_width ? a.stage_width - 1 : lx);
+            ly = ly < 0 ? 0 : (ly >= a.stage_height ? a.stage_height - 1 : ly);
+            const float w = weight * (i == 0 ? 1.0f - tx : tx) * (j == 0 ? 1.0f - ty : ty);
+            const int k = a.stage_offset + (ly * a.stage_width + lx) * 4;
+            *value += w * work[k + channel];
+            *alpha += w * work[k + 3];
+        }
+    }
+}
+
+// Reads the stage image through its warp op for the pixel at `at`, as straight color in the
+// working space. Alpha comes from green, which every warp keeps sharpest.
+DL_DEVICE dl_float4 dl_read_stage(DL_GLOBAL const float* work, struct dl_image_args a,
+                                  DL_CONSTANT const struct dl_chain* chain, struct dl_place at) {
+    DL_CONSTANT const struct dl_op* op = &chain->ops[a.stage_op - 1];
+    float out[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    for (int channel = 0; channel < 3; ++channel) {
+        const int taps = dl_warp_taps(op, channel);
+        const float weight = 1.0f / (float)taps;
+        float value = 0.0f;
+        float alpha = 0.0f;
+        for (int tap = 0; tap < taps; ++tap) {
+            float sx = 0.0f;
+            float sy = 0.0f;
+            dl_warp_source(op, at, channel, tap, &sx, &sy);
+            dl_stage_tap(work, a, channel, sx, sy, weight, &value, &alpha);
+        }
+        out[channel] = alpha > 0.0f ? value / alpha : 0.0f;
+        if (channel == 1) {
+            out[3] = alpha;
+        }
+    }
+    return dl_make_float4(out[0], out[1], out[2], out[3] > 1.0f ? 1.0f : out[3]);
+}
+
 // The final pass: processes the pixel at (x, y) of the render window with the whole chain.
 DL_DEVICE void dl_chain_at(DL_GLOBAL const float* src, DL_GLOBAL float* dst, int x, int y,
                            struct dl_image_args a, DL_CONSTANT const struct dl_chain* chain,
                            DL_GLOBAL const float* table, DL_GLOBAL const float* work) {
     const int di = (a.dst_y0 + y) * a.dst_row_floats + (a.dst_x0 + x) * a.channels;
-    if (a.channels == 1) {
+    if (a.channels == 1 && a.stage_op == 0) {
         int sx = a.src_x0 + x;
         int sy = a.src_y0 + y;
         sx = sx < 0 ? 0 : (sx >= a.src_width ? a.src_width - 1 : sx);
@@ -268,8 +376,22 @@ DL_DEVICE void dl_chain_at(DL_GLOBAL const float* src, DL_GLOBAL float* dst, int
     int unpremultiplied = 0;
     const dl_float4 original =
         dl_apply_transform(dl_read_source(src, x, y, a, &at, &unpremultiplied), &chain->input);
-    dl_float4 c = dl_run_ops(original, chain, chain->count, table, work, at);
-    c = dl_apply_transform(dl_mix(original, c, chain->strength), &chain->output);
+    if (a.channels == 1) {
+        dst[di] = dl_read_stage(work, a, chain, at).w;
+        return;
+    }
+    dl_float4 c = original;
+    if (a.stage_op > 0) {
+        c = dl_read_stage(work, a, chain, at);
+        // The warped image carries its own alpha, so it is premultiplied by that.
+        unpremultiplied = a.channels == 4 && a.premultiplied;
+    }
+    c = dl_run_ops(c, chain, a.stage_op, chain->count, table, work, at);
+    // Strength fades a warp's alpha with its color.
+    const float alpha = original.w + (c.w - original.w) * chain->strength;
+    c = dl_mix(original, c, chain->strength);
+    c.w = alpha;
+    c = dl_apply_transform(c, &chain->output);
     if (unpremultiplied) {
         c = dl_make_float4(c.x * c.w, c.y * c.w, c.z * c.w, c.w);
     }
@@ -281,23 +403,40 @@ DL_DEVICE void dl_chain_at(DL_GLOBAL const float* src, DL_GLOBAL float* dst, int
     }
 }
 
-// An extract pass: runs the chain up to op `stop`, a spatial op, at pixel (x, y) of the pass's
-// region and writes what that op spreads, weighted by alpha, to the work buffer.
+// An extract pass: runs the chain up to op `stop` at pixel (x, y) of the pass's region. For a
+// spatial op it writes what that op spreads, weighted by alpha, to the work buffer; for a warp
+// op (a stage pass) it writes the color, premultiplied, and alpha.
 DL_DEVICE void dl_extract_at(DL_GLOBAL const float* src, DL_GLOBAL float* work, int x, int y,
                              struct dl_image_args a, DL_CONSTANT const struct dl_chain* chain,
                              int stop, DL_GLOBAL const float* table) {
-    const int wi = a.work_offset + (y * a.width + x) * 3;
-    if (a.channels == 1) {
-        work[wi] = 0.0f;
-        work[wi + 1] = 0.0f;
-        work[wi + 2] = 0.0f;
-        return;
-    }
+    const int warp = dl_is_warp(chain->ops[stop].tool);
+    const int wi = a.work_offset + (y * a.width + x) * (warp ? 4 : 3);
     struct dl_place at;
     int unpremultiplied = 0;
     dl_float4 c =
         dl_apply_transform(dl_read_source(src, x, y, a, &at, &unpremultiplied), &chain->input);
-    c = dl_run_ops(c, chain, stop, table, work, at);
+    if (a.stage_op > 0) {
+        c = dl_read_stage(work, a, chain, at);
+    }
+    if (a.channels == 1) {
+        // Alpha only: no color to work on, but a warp still moves the alpha.
+        const float alpha = c.w;
+        work[wi] = 0.0f;
+        work[wi + 1] = 0.0f;
+        work[wi + 2] = 0.0f;
+        if (warp) {
+            work[wi + 3] = alpha;
+        }
+        return;
+    }
+    c = dl_run_ops(c, chain, a.stage_op, stop, table, work, at);
+    if (warp) {
+        work[wi] = c.x * c.w;
+        work[wi + 1] = c.y * c.w;
+        work[wi + 2] = c.z * c.w;
+        work[wi + 3] = c.w;
+        return;
+    }
     const dl_float4 e = dl_extract_op(c, &chain->ops[stop]);
     work[wi] = e.x * c.w;
     work[wi + 1] = e.y * c.w;

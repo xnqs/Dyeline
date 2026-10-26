@@ -8,12 +8,12 @@
 // render core in core/.
 
 #include <atomic>
-#include <map>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -254,7 +254,8 @@ public:
                               static_cast<float*>(dst->getPixelData()), chain.table.data(), plan);
     }
 
-    // Spatial tools read around each pixel, so ask the host for that much more source.
+    // Spatial tools read around each pixel and warps read elsewhere, so ask the host for the
+    // source the render reads.
     void getRegionsOfInterest(const OFX::RegionsOfInterestArguments& args,
                               OFX::RegionOfInterestSetter& rois) override {
         dyeline::CompiledChain chain;
@@ -266,16 +267,21 @@ public:
         if (!chain.has_spatial()) {
             return;
         }
-        const dyeline::RenderGeometry geometry =
+        dyeline::RenderGeometry geometry =
             frame_geometry(args.time, args.renderScale, src_clip_->getPixelAspectRatio());
-        const dyeline::PixelMargin margin = dyeline::spatial_margin(chain.pass, geometry);
-        OfxRectD roi = args.regionOfInterest;
-        const double mx = margin.x * static_cast<double>(geometry.canonical_x);
-        const double my = margin.y * static_cast<double>(geometry.canonical_y);
-        roi.x1 -= mx;
-        roi.x2 += mx;
-        roi.y1 -= my;
-        roi.y2 += my;
+        const double cx = geometry.canonical_x;
+        const double cy = geometry.canonical_y;
+        const OfxRectD& asked = args.regionOfInterest;
+        geometry.window = {static_cast<int>(std::floor(asked.x1 / cx)),
+                           static_cast<int>(std::floor(asked.y1 / cy)),
+                           static_cast<int>(std::ceil(asked.x2 / cx)),
+                           static_cast<int>(std::ceil(asked.y2 / cy))};
+        const dyeline::PixelRect source = dyeline::source_region(chain.pass, geometry);
+        OfxRectD roi;
+        roi.x1 = source.x1 * cx;
+        roi.y1 = source.y1 * cy;
+        roi.x2 = source.x2 * cx;
+        roi.y2 = source.y2 * cy;
         rois.setRegionOfInterest(*src_clip_, roi);
     }
 
