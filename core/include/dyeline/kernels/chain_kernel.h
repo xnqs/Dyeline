@@ -138,6 +138,17 @@ struct dl_image_args {
     int stage_y0;
     int stage_width;
     int stage_height;
+    // Passes after the first spatial op that has ops before it (see plan_render): 1 + that
+    // op's index, or 0. The cache holds the color at that op's input, straight RGBA,
+    // `cache_width` pixels a row from host pixel (cache_x0, cache_y0), at `cache_offset`
+    // floats into the work buffer. That op's extract pass writes it (cache_write); later
+    // passes read it rather than run the ops before it again.
+    int cache_op;
+    int cache_write;
+    int cache_offset;
+    int cache_x0;
+    int cache_y0;
+    int cache_width;
 };
 
 // One box blur over lines of RGB pixels in the work buffer. Line `i` reads from
@@ -195,6 +206,17 @@ DL_DEVICE void dl_warp_source(DL_CONSTANT const struct dl_op* op, struct dl_plac
     } else {
         *sx = at.x;
         *sy = at.y;
+    }
+}
+
+// How far tap `tap` (1 or more) of a warp op is from its tap 0, for the pixel at `at`.
+DL_DEVICE void dl_warp_offset(DL_CONSTANT const struct dl_op* op, struct dl_place at, int tap,
+                              DL_PRIVATE float* dx, DL_PRIVATE float* dy) {
+    if (op->tool == DL_OP_CHROMATIC_ABERRATION) {
+        dl_chromatic_aberration_offset(op->p, op->strength, at, tap, dx, dy);
+    } else {
+        *dx = 0.0f;
+        *dy = 0.0f;
     }
 }
 
@@ -336,35 +358,60 @@ DL_DEVICE dl_float4 dl_read_source(DL_GLOBAL const float* src, int x, int y, str
     return c;
 }
 
-// One channel of a stage image, bilinearly filtered at canonical position (sx, sy), with its
-// alpha: adds both, times `weight`, to *value and *alpha. Pixels outside the frame are
-// transparent black, so a warp that reads past the frame's edges shows nothing there.
+// The two stage pixels that bilinear filtering at canonical position `s` reads along one axis:
+// their indices into the stage, clamped to it, their weights, and whether each one's center
+// is inside the frame [lo, hi]. Pixels outside the frame are transparent black, so a warp that
+// reads past the frame's edges shows nothing there.
+DL_DEVICE void dl_stage_axis(float s, float canonical, float lo, float hi, int origin, int size,
+                             DL_PRIVATE int* index, DL_PRIVATE float* weight,
+                             DL_PRIVATE int* inside) {
+    const float f = s / canonical - 0.5f;
+    const float f0 = dl_floor(f);
+    const float t = f - f0;
+    for (int i = 0; i < 2; ++i) {
+        const int p = (int)f0 + i;
+        const float centre = ((float)p + 0.5f) * canonical;
+        inside[i] = centre >= lo && centre <= hi;
+        int l = p - origin;
+        l = l < 0 ? 0 : (l >= size ? size - 1 : l);
+        index[i] = l;
+        weight[i] = i == 0 ? 1.0f - t : t;
+    }
+}
+
+// Channel `channel` of a stage image, bilinearly filtered at canonical position (sx, sy), with
+// its alpha: adds both, times `weight`, to *value and *alpha. A channel of 3 reads all three
+// colors into value[0..2] at once.
 DL_DEVICE void dl_stage_tap(DL_GLOBAL const float* work, struct dl_image_args a, int channel,
                             float sx, float sy, float weight, DL_PRIVATE float* value,
                             DL_PRIVATE float* alpha) {
-    const float fx = sx / a.canonical_x - 0.5f;
-    const float fy = sy / a.canonical_y - 0.5f;
-    const float x0 = dl_floor(fx);
-    const float y0 = dl_floor(fy);
-    const float tx = fx - x0;
-    const float ty = fy - y0;
+    int ix[2];
+    int iy[2];
+    float wx[2];
+    float wy[2];
+    int in_x[2];
+    int in_y[2];
+    dl_stage_axis(sx, a.canonical_x, a.frame_left, a.frame_right, a.stage_x0, a.stage_width, ix,
+                  wx, in_x);
+    dl_stage_axis(sy, a.canonical_y, a.frame_bottom, a.frame_top, a.stage_y0, a.stage_height, iy,
+                  wy, in_y);
     for (int j = 0; j < 2; ++j) {
+        if (!in_y[j]) {
+            continue;
+        }
         for (int i = 0; i < 2; ++i) {
-            const int px = (int)x0 + i;
-            const int py = (int)y0 + j;
-            const float centre_x = ((float)px + 0.5f) * a.canonical_x;
-            const float centre_y = ((float)py + 0.5f) * a.canonical_y;
-            if (centre_x < a.frame_left || centre_x > a.frame_right || centre_y < a.frame_bottom ||
-                centre_y > a.frame_top) {
+            if (!in_x[i]) {
                 continue;
             }
-            int lx = px - a.stage_x0;
-            int ly = py - a.stage_y0;
-            lx = lx < 0 ? 0 : (lx >= a.stage_width ? a.stage_width - 1 : lx);
-            ly = ly < 0 ? 0 : (ly >= a.stage_height ? a.stage_height - 1 : ly);
-            const float w = weight * (i == 0 ? 1.0f - tx : tx) * (j == 0 ? 1.0f - ty : ty);
-            const int k = a.stage_offset + (ly * a.stage_width + lx) * 4;
-            *value += w * work[k + channel];
+            const float w = weight * wx[i] * wy[j];
+            const int k = a.stage_offset + (iy[j] * a.stage_width + ix[i]) * 4;
+            if (channel == 3) {
+                value[0] += w * work[k];
+                value[1] += w * work[k + 1];
+                value[2] += w * work[k + 2];
+            } else {
+                *value += w * work[k + channel];
+            }
             *alpha += w * work[k + 3];
         }
     }
@@ -376,23 +423,62 @@ DL_DEVICE dl_float4 dl_read_stage(DL_GLOBAL const float* work, struct dl_image_a
                                   DL_CONSTANT const struct dl_chain* chain, struct dl_place at) {
     DL_CONSTANT const struct dl_op* op = &chain->ops[a.stage_op - 1];
     float out[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    for (int channel = 0; channel < 3; ++channel) {
-        const int taps = dl_warp_taps(op, channel);
-        const float weight = 1.0f / (float)taps;
-        float value = 0.0f;
+    if (op->tool == DL_OP_LENS_DISTORTION) {
+        // Every channel moves alike: one tap reads them all.
+        float sx = 0.0f;
+        float sy = 0.0f;
         float alpha = 0.0f;
-        for (int tap = 0; tap < taps; ++tap) {
-            float sx = 0.0f;
-            float sy = 0.0f;
-            dl_warp_source(op, at, channel, tap, &sx, &sy);
-            dl_stage_tap(work, a, channel, sx, sy, weight, &value, &alpha);
+        dl_warp_source(op, at, 1, 0, &sx, &sy);
+        dl_stage_tap(work, a, 3, sx, sy, 1.0f, out, &alpha);
+        for (int channel = 0; channel < 3; ++channel) {
+            out[channel] = alpha > 0.0f ? out[channel] / alpha : 0.0f;
         }
-        out[channel] = alpha > 0.0f ? value / alpha : 0.0f;
-        if (channel == 1) {
-            out[3] = alpha;
+        out[3] = alpha;
+    } else {
+        for (int channel = 0; channel < 3; ++channel) {
+            const int taps = dl_warp_taps(op, channel);
+            const float weight = 1.0f / (float)taps;
+            float value = 0.0f;
+            float alpha = 0.0f;
+            float cx = 0.0f;
+            float cy = 0.0f;
+            dl_warp_source(op, at, channel, 0, &cx, &cy);
+            dl_stage_tap(work, a, channel, cx, cy, weight, &value, &alpha);
+            for (int tap = 1; tap < taps; ++tap) {
+                float dx = 0.0f;
+                float dy = 0.0f;
+                dl_warp_offset(op, at, tap, &dx, &dy);
+                dl_stage_tap(work, a, channel, cx + dx, cy + dy, weight, &value, &alpha);
+            }
+            out[channel] = alpha > 0.0f ? value / alpha : 0.0f;
+            if (channel == 1) {
+                out[3] = alpha;
+            }
         }
     }
     return dl_make_float4(out[0], out[1], out[2], out[3] > 1.0f ? 1.0f : out[3]);
+}
+
+// Where the pixel at `at` is in the cache (see dl_image_args).
+DL_DEVICE int dl_cache_index(struct dl_image_args a, struct dl_place at) {
+    return a.cache_offset + ((at.py - a.cache_y0) * a.cache_width + (at.px - a.cache_x0)) * 4;
+}
+
+// Reads the input color of the pass, after the warp it reads through if any and from the
+// cache if it has one, and says which op to go on from.
+DL_DEVICE dl_float4 dl_pass_input(dl_float4 c, DL_GLOBAL const float* work, struct dl_image_args a,
+                                  DL_CONSTANT const struct dl_chain* chain, struct dl_place at,
+                                  DL_PRIVATE int* first) {
+    *first = a.stage_op;
+    if (a.cache_op > 0 && !a.cache_write) {
+        const int k = dl_cache_index(a, at);
+        *first = a.cache_op - 1;
+        return dl_make_float4(work[k], work[k + 1], work[k + 2], work[k + 3]);
+    }
+    if (a.stage_op > 0) {
+        return dl_read_stage(work, a, chain, at);
+    }
+    return c;
 }
 
 // The final pass: processes the pixel at (x, y) of the render window with the whole chain.
@@ -416,13 +502,13 @@ DL_DEVICE void dl_chain_at(DL_GLOBAL const float* src, DL_GLOBAL float* dst, int
         dst[di] = dl_read_stage(work, a, chain, at).w;
         return;
     }
-    dl_float4 c = original;
+    int first = 0;
+    dl_float4 c = dl_pass_input(original, work, a, chain, at, &first);
     if (a.stage_op > 0) {
-        c = dl_read_stage(work, a, chain, at);
         // The warped image carries its own alpha, so it is premultiplied by that.
         unpremultiplied = a.channels == 4 && a.premultiplied;
     }
-    c = dl_run_ops(c, chain, a.stage_op, chain->count, table, work, at);
+    c = dl_run_ops(c, chain, first, chain->count, table, work, at);
     // Strength fades a warp's alpha with its color.
     const float alpha = original.w + (c.w - original.w) * chain->strength;
     c = dl_mix(original, c, chain->strength);
@@ -449,11 +535,10 @@ DL_DEVICE void dl_extract_at(DL_GLOBAL const float* src, DL_GLOBAL float* work, 
     const int wi = a.work_offset + (y * a.width + x) * (warp ? 4 : 3);
     struct dl_place at;
     int unpremultiplied = 0;
-    dl_float4 c =
-        dl_apply_transform(dl_read_source(src, x, y, a, &at, &unpremultiplied), &chain->input);
-    if (a.stage_op > 0) {
-        c = dl_read_stage(work, a, chain, at);
-    }
+    int first = 0;
+    dl_float4 c = dl_pass_input(
+        dl_apply_transform(dl_read_source(src, x, y, a, &at, &unpremultiplied), &chain->input),
+        work, a, chain, at, &first);
     if (a.channels == 1) {
         // Alpha only: no color to work on, but a warp still moves the alpha.
         const float alpha = c.w;
@@ -465,7 +550,14 @@ DL_DEVICE void dl_extract_at(DL_GLOBAL const float* src, DL_GLOBAL float* work, 
         }
         return;
     }
-    c = dl_run_ops(c, chain, a.stage_op, stop, table, work, at);
+    c = dl_run_ops(c, chain, first, stop, table, work, at);
+    if (a.cache_write) {
+        const int k = dl_cache_index(a, at);
+        work[k] = c.x;
+        work[k + 1] = c.y;
+        work[k + 2] = c.z;
+        work[k + 3] = c.w;
+    }
     if (warp) {
         work[wi] = c.x * c.w;
         work[wi + 1] = c.y * c.w;

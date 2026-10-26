@@ -60,8 +60,9 @@ DL_DEVICE int dl_chromatic_aberration_taps(DL_CONSTANT const float* p, int chann
     return channel != 1 && p[2] > 0.0f ? DL_CA_FRINGE_TAPS : 1;
 }
 
-DL_DEVICE void dl_chromatic_aberration_source(DL_CONSTANT const float* p, float strength,
-                                              struct dl_place at, int channel, int tap,
+// Where red or blue is read from at the fringe's center (tap 0). Green is not moved.
+DL_DEVICE void dl_chromatic_aberration_center(DL_CONSTANT const float* p, float strength,
+                                              struct dl_place at, int channel,
                                               DL_PRIVATE float* sx, DL_PRIVATE float* sy) {
     if (channel == 1) {
         *sx = at.x;
@@ -79,12 +80,31 @@ DL_DEVICE void dl_chromatic_aberration_source(DL_CONSTANT const float* p, float 
     // An output pixel reads from nearer the center to move its channel outward.
     *sx = cx + (at.x - cx) * scale;
     *sy = cy + (at.y - cy) * scale;
-    if (tap > 0) {
-        // A hexagon of six taps around the center one: a small disc blur.
-        const float radius = strength * p[2] * width;
-        const float angle = 1.04719755f * (float)(tap - 1);  // 60 degrees apart
-        *sx += radius * dl_cos(angle);
-        *sy += radius * dl_sin(angle);
+}
+
+// How far tap `tap` (1 to 6) of the fringe is from its center: a hexagon of six taps around
+// the center one, 60 degrees apart, makes a small disc blur.
+DL_DEVICE void dl_chromatic_aberration_offset(DL_CONSTANT const float* p, float strength,
+                                              struct dl_place at, int tap, DL_PRIVATE float* dx,
+                                              DL_PRIVATE float* dy) {
+    const float radius = strength * p[2] * (at.frame_right - at.frame_left);
+    const int k = tap - 1;
+    const float ux = k == 0 ? 1.0f : (k == 3 ? -1.0f : (k == 1 || k == 5 ? 0.5f : -0.5f));
+    const float uy = k == 0 || k == 3 ? 0.0f : (k < 3 ? 0.866025404f : -0.866025404f);
+    *dx = radius * ux;
+    *dy = radius * uy;
+}
+
+DL_DEVICE void dl_chromatic_aberration_source(DL_CONSTANT const float* p, float strength,
+                                              struct dl_place at, int channel, int tap,
+                                              DL_PRIVATE float* sx, DL_PRIVATE float* sy) {
+    dl_chromatic_aberration_center(p, strength, at, channel, sx, sy);
+    if (channel != 1 && tap > 0) {
+        float dx = 0.0f;
+        float dy = 0.0f;
+        dl_chromatic_aberration_offset(p, strength, at, tap, &dx, &dy);
+        *sx += dx;
+        *sy += dy;
     }
 }
 

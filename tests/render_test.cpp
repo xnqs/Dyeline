@@ -526,6 +526,82 @@ TEST(Warp, TilesAndCroppedSourcesMatchTheWholeFrame) {
     }
 }
 
+TEST(RenderPlan, CachesTheColorBeforeTheFirstSpatialOpAndMatchesWithout) {
+    // Color ops before spatial ones, on both sides of a warp, on a premultiplied RGBA frame
+    // with soft coverage.
+    const CompiledChain chain =
+        compile({tool("exposure", {{"stops", 0.5}}),
+                 tool("three-way", {{"shadows-hue", 200.0}, {"shadows-amount", 0.3}}),
+                 tool("diffusion", {{"amount", 0.6}, {"size", 3.0}}),
+                 tool("halation", {{"amount", 0.8}, {"size", 2.0}}),
+                 tool("lens-distortion", {{"amount", 0.4}}),
+                 tool("contrast", {{"contrast", 1.3}}),
+                 tool("local-contrast", {{"amount", 0.5}}),
+                 tool("lens-vignette", {{"amount", -1.0}})});
+    const int w = 64;
+    const int h = 48;
+    const std::vector<float> rgb = test_frame(w, h);
+    std::vector<float> src(static_cast<std::size_t>(w) * h * 4);
+    for (int i = 0; i < w * h; ++i) {
+        const float a = static_cast<float>(i % 5) / 4.0f;
+        for (int k = 0; k < 3; ++k) {
+            src[static_cast<std::size_t>(i) * 4 + k] = rgb[static_cast<std::size_t>(i) * 3 + k] * a;
+        }
+        src[static_cast<std::size_t>(i) * 4 + 3] = a;
+    }
+    RenderGeometry g = frame_geometry(w, h);
+    g.channels = 4;
+    g.premultiplied = true;
+    g.src_row_floats = w * 4;
+    g.dst_row_floats = w * 4;
+    const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, g);
+
+    // Diffusion's extract pass keeps its input; Halation's and the warp's read it. After the
+    // warp, Local Contrast's extract pass keeps its input for the final pass.
+    std::vector<const dyeline::RenderPass*> reads;
+    for (const dyeline::RenderPass& pass : plan.passes) {
+        if (pass.kind != dyeline::PassKind::Blur) {
+            reads.push_back(&pass);
+        }
+    }
+    ASSERT_EQ(reads.size(), 5u);
+    EXPECT_EQ(reads[0]->stop, 2);
+    EXPECT_EQ(reads[0]->image.cache_write, 1);
+    EXPECT_EQ(reads[0]->image.cache_op, 3);
+    EXPECT_EQ(reads[1]->stop, 3);
+    EXPECT_EQ(reads[1]->image.cache_write, 0);
+    EXPECT_EQ(reads[1]->image.cache_op, 3);
+    EXPECT_EQ(reads[2]->stop, 4);
+    EXPECT_EQ(reads[2]->image.cache_op, 3);
+    EXPECT_EQ(reads[3]->stop, 6);
+    EXPECT_EQ(reads[3]->image.cache_write, 1);
+    EXPECT_EQ(reads[3]->image.cache_op, 7);
+    EXPECT_EQ(reads[4]->kind, dyeline::PassKind::Final);
+    EXPECT_EQ(reads[4]->image.cache_op, 7);
+
+    // The same plan without the cache gives exactly the same result.
+    dyeline::RenderPlan uncached = plan;
+    for (dyeline::RenderPass& pass : uncached.passes) {
+        pass.image.cache_op = 0;
+        pass.image.cache_write = 0;
+    }
+    std::vector<float> with(src.size(), -1.0f);
+    std::vector<float> without(src.size(), -1.0f);
+    dyeline::run_plan_cpu(src.data(), with.data(), chain.table.data(), plan, 2);
+    dyeline::run_plan_cpu(src.data(), without.data(), chain.table.data(), uncached, 2);
+    for (std::size_t i = 0; i < with.size(); ++i) {
+        ASSERT_EQ(with[i], without[i]) << "float " << i;
+    }
+
+    // Alpha-only images have no color to keep.
+    RenderGeometry alpha = frame_geometry(w, h);
+    alpha.channels = 1;
+    for (const dyeline::RenderPass& pass : dyeline::plan_render(chain.pass, alpha).passes) {
+        EXPECT_EQ(pass.image.cache_op, 0);
+        EXPECT_EQ(pass.image.cache_write, 0);
+    }
+}
+
 // A frame of thin bright lines on a dark ground, every `step` pixels across and down.
 std::vector<float> grid_frame(int w, int h, int step) {
     std::vector<float> f(static_cast<std::size_t>(w) * h * 3, 0.05f);
