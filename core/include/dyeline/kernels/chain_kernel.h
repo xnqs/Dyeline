@@ -40,6 +40,7 @@
 #include "tools/s_curve.h"
 #include "tools/selective.h"
 #include "tools/shadows_highlights.h"
+#include "tools/soft_focus.h"
 #include "tools/three_way.h"
 
 // At most this many tools run in one pass, and each gets this many floats of parameters.
@@ -69,17 +70,20 @@
 #define DL_OP_LOCAL_CONTRAST 20
 #define DL_OP_LENS_DISTORTION 21
 #define DL_OP_CHROMATIC_ABERRATION 22
+#define DL_OP_EDGE_SOFTNESS 23
+#define DL_OP_SWING_TILT 24
 
 // Spatial ops keep their blur size in their last parameter, for the host's render plan.
 #define DL_OP_BLUR_SIZE (DL_OP_PARAMS - 1)
 
 // One tool in the pass. `strength` blends between the tool's input and output. A spatial
 // op's `ip` locate its blurred image in the work buffer: ip[0] is where it starts, in floats,
-// ip[1] and ip[2] the pixel it begins at, and ip[3] its width. Each pixel has 3 floats.
+// ip[1] and ip[2] the pixel it begins at, and ip[3] its width. Each pixel has 3 floats. An op
+// with two blur levels finds its lighter blur the same way in ip[4] to ip[7].
 struct dl_op {
     int tool;
     float strength;
-    int ip[4];
+    int ip[8];
     float p[DL_OP_PARAMS];
 };
 
@@ -152,7 +156,14 @@ struct dl_box_args {
 };
 
 DL_DEVICE int dl_is_spatial(int tool) {
-    return tool == DL_OP_DIFFUSION || tool == DL_OP_HALATION || tool == DL_OP_LOCAL_CONTRAST;
+    return tool == DL_OP_DIFFUSION || tool == DL_OP_HALATION || tool == DL_OP_LOCAL_CONTRAST ||
+           tool == DL_OP_EDGE_SOFTNESS || tool == DL_OP_SWING_TILT;
+}
+
+// How many blurred images a spatial op reads: 2 for the tools whose blur varies across the
+// frame (soft_focus.h), else 1.
+DL_DEVICE int dl_blur_levels(int tool) {
+    return tool == DL_OP_EDGE_SOFTNESS || tool == DL_OP_SWING_TILT ? 2 : 1;
 }
 
 DL_DEVICE int dl_is_warp(int tool) {
@@ -190,6 +201,13 @@ DL_DEVICE dl_float4 dl_mix(dl_float4 a, dl_float4 b, float t) {
 DL_DEVICE dl_float4 dl_blurred_at(DL_CONSTANT const struct dl_op* op, DL_GLOBAL const float* work,
                                   struct dl_place at) {
     const int i = op->ip[0] + ((at.py - op->ip[2]) * op->ip[3] + (at.px - op->ip[1])) * 3;
+    return dl_make_float4(work[i], work[i + 1], work[i + 2], 0.0f);
+}
+
+// A two-level op's lighter blur at this pixel.
+DL_DEVICE dl_float4 dl_fine_blurred_at(DL_CONSTANT const struct dl_op* op,
+                                       DL_GLOBAL const float* work, struct dl_place at) {
+    const int i = op->ip[4] + ((at.py - op->ip[6]) * op->ip[7] + (at.px - op->ip[5])) * 3;
     return dl_make_float4(work[i], work[i + 1], work[i + 2], 0.0f);
 }
 
@@ -237,6 +255,13 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
             return dl_tool_diffusion_combine(c, op->p, dl_blurred_at(op, work, at));
         case DL_OP_HALATION:
             return dl_tool_halation_combine(c, op->p, dl_blurred_at(op, work, at));
+        case DL_OP_EDGE_SOFTNESS:
+            return dl_lens_blur_mix(c, dl_fine_blurred_at(op, work, at),
+                                    dl_blurred_at(op, work, at),
+                                    dl_edge_softness_weight(op->p, at));
+        case DL_OP_SWING_TILT:
+            return dl_lens_blur_mix(c, dl_fine_blurred_at(op, work, at),
+                                    dl_blurred_at(op, work, at), dl_swing_tilt_weight(op->p, at));
         default:
             return c;
     }
@@ -251,6 +276,9 @@ DL_DEVICE dl_float4 dl_extract_op(dl_float4 c, DL_CONSTANT const struct dl_op* o
             return dl_tool_halation_extract(c, op->p);
         case DL_OP_LOCAL_CONTRAST:
             return dl_tool_local_contrast_extract(c, op->p);
+        case DL_OP_EDGE_SOFTNESS:
+        case DL_OP_SWING_TILT:
+            return dl_tool_lens_blur_extract(c);
         default:
             return dl_make_float4(0.0f, 0.0f, 0.0f, c.w);
     }

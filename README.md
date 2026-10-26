@@ -13,8 +13,8 @@ the host provides one, else on its own OpenCL or Metal device, else on the CPU. 
 Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade (with HSL and Sat EQ), 4-Way Wheels,
 Blockbuster, Duotone, LUT, Film Negative, Film Print, Bleach Bypass, 2-Strip, Gradient Tint,
 Grad Exposure, Spot Exposure, Fill Light, Spot Fill, Color Filter, Lens Vignette, Lens
-Distortion, Chromatic Aberration, Grain, Diffusion Filter, Local Contrast, Telecine Net and
-Halation (see
+Distortion, Chromatic Aberration, Edge Softness, Swing-Tilt, Grain, Diffusion Filter, Local
+Contrast, Telecine Net and Halation (see
 [docs/tools.md](docs/tools.md)). The Look Designer edits the chain, the tools and the color
 settings, with a preview of the host's current frame, its scopes, and a looks browser with 23
 bundled looks. It is a beta: try it on real projects, and expect rough edges.

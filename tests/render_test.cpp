@@ -1,5 +1,5 @@
 // The render plan: passes for spatial and warp tools, the blur's size, Diffusion, Halation,
-// Lens Distortion and Chromatic Aberration, and renders split into tiles or given only the
+// Lens Distortion, Chromatic Aberration, Edge Softness and Swing-Tilt, and renders split into tiles or given only the
 // source the plugin asks for matching one render of the whole frame.
 
 #include "dyeline/render.h"
@@ -524,6 +524,107 @@ TEST(Warp, TilesAndCroppedSourcesMatchTheWholeFrame) {
         g.dst_row_floats = window.width() * 3;
         expect_source_region_is_enough(chain, g, src, w);
     }
+}
+
+// A frame of thin bright lines on a dark ground, every `step` pixels across and down.
+std::vector<float> grid_frame(int w, int h, int step) {
+    std::vector<float> f(static_cast<std::size_t>(w) * h * 3, 0.05f);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            if (x % step == step / 2 || y % step == step / 2) {
+                for (int k = 0; k < 3; ++k) {
+                    f[(static_cast<std::size_t>(y) * w + x) * 3 + k] = 1.0f;
+                }
+            }
+        }
+    }
+    return f;
+}
+
+TEST(RenderPlan, TwoLevelBlursAddTwelveBlurPasses) {
+    const CompiledChain chain = compile({tool("edge-softness", {{"blur", 3.0}})});
+    const RenderGeometry g = frame_geometry(200, 100);
+    const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, g);
+    ASSERT_EQ(plan.passes.size(), 1u + 12u + 1u);
+    EXPECT_EQ(plan.passes[0].kind, dyeline::PassKind::Extract);
+    EXPECT_EQ(plan.passes[12].kind, dyeline::PassKind::Blur);
+    // Sigma 6 pixels: a light blur of sigma 2 (box radius 2), then sigma 5.66 (radius 5).
+    const PixelRect s = dyeline::source_region(chain.pass, g);
+    EXPECT_EQ(s.x1, -3 * (2 + 5));
+    EXPECT_EQ(s.x2, 200 + 3 * (2 + 5));
+}
+
+TEST(EdgeSoftness, KeepsTheCenterSharpAndBlursTheEdges) {
+    const int w = 120;
+    const int h = 80;
+    const std::vector<float> src = grid_frame(w, h, 20);
+    const CompiledChain chain =
+        compile({tool("edge-softness", {{"blur", 2.0}, {"size", 0.3}, {"softness", 0.4}})});
+    const std::vector<float> out = render(chain, frame_geometry(w, h), src);
+    // Lines through the middle stay as they were; lines near the corners spread.
+    EXPECT_FLOAT_EQ(at(out, w, 50, 40, 1), 1.0f);
+    EXPECT_FLOAT_EQ(at(out, w, 49, 40, 1), 0.05f);
+    EXPECT_LT(at(out, w, 10, 10, 1), 0.6f);
+    EXPECT_GT(at(out, w, 9, 6, 1), 0.1f);
+    // An even image stays even.
+    std::vector<float> even(src.size(), 0.3f);
+    for (float v : render(chain, frame_geometry(w, h), even)) {
+        EXPECT_NEAR(v, 0.3f, 1e-5f);
+    }
+    EXPECT_TRUE(compile({tool("edge-softness", {{"blur", 0.0}})}).pass.count == 0);
+}
+
+TEST(SwingTilt, KeepsABandSharpAcrossTheFrame) {
+    const int w = 120;
+    const int h = 80;
+    const std::vector<float> src = grid_frame(w, h, 20);
+    // Angle 0: the band runs across the frame, so rows near the middle stay sharp and the
+    // top and bottom blur, left and right alike.
+    const CompiledChain across = compile(
+        {tool("swing-tilt", {{"blur", 2.0}, {"focus", 0.1}, {"softness", 0.2}, {"angle", 0.0}})});
+    const std::vector<float> a = render(across, frame_geometry(w, h), src);
+    EXPECT_FLOAT_EQ(at(a, w, 15, 40, 1), 0.05f);
+    EXPECT_FLOAT_EQ(at(a, w, 15, 39, 1), 0.05f);
+    EXPECT_FLOAT_EQ(at(a, w, 105, 41, 1), 0.05f);
+    EXPECT_FLOAT_EQ(at(a, w, 15, 50, 1), 1.0f);  // a row line just inside the band
+    EXPECT_LT(at(a, w, 15, 70, 1), 0.6f);       // far from it, the row line spreads
+    EXPECT_NEAR(at(a, w, 15, 70, 1), at(a, w, 105, 70, 1), 1e-5f);
+    // Angle 90: the band runs up and down instead.
+    const CompiledChain upright = compile(
+        {tool("swing-tilt", {{"blur", 2.0}, {"focus", 0.1}, {"softness", 0.2}, {"angle", 90.0}})});
+    const std::vector<float> u = render(upright, frame_geometry(w, h), src);
+    EXPECT_FLOAT_EQ(at(u, w, 50, 15, 1), 1.0f);
+    EXPECT_LT(at(u, w, 10, 15, 1), 0.6f);
+}
+
+TEST(SoftFocus, TilesAndCroppedSourcesMatchTheWholeFrame) {
+    const CompiledChain chain =
+        compile({tool("exposure", {{"stops", 0.3}}),
+                 tool("swing-tilt", {{"blur", 2.0}, {"angle", 30.0}, {"center-y", 0.2}}, 0.8),
+                 tool("halation", {{"amount", 0.8}, {"size", 2.0}}),
+                 tool("edge-softness", {{"blur", 1.5}, {"center-x", -0.2}})});
+    const int w = 90;
+    const int h = 70;
+    const std::vector<float> src = test_frame(w, h);
+    const RenderGeometry whole = frame_geometry(w, h);
+    const std::vector<float> expected = render(chain, whole, src);
+    std::vector<float> tiled(expected.size(), -1.0f);
+    for (const PixelRect& tile : {PixelRect{0, 0, 37, 29}, PixelRect{37, 0, 90, 29},
+                                  PixelRect{0, 29, 37, 70}, PixelRect{37, 29, 90, 70}}) {
+        RenderGeometry g = whole;
+        g.window = tile;
+        const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, g);
+        dyeline::run_plan_cpu(src.data(), tiled.data(), chain.table.data(), plan, 2);
+    }
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        ASSERT_NEAR(tiled[i], expected[i], 1e-5f * std::max(1.0f, std::fabs(expected[i])))
+            << "pixel " << i / 3;
+    }
+    RenderGeometry g = whole;
+    g.window = {40, 30, 52, 41};
+    g.dst_bounds = g.window;
+    g.dst_row_floats = g.window.width() * 3;
+    expect_source_region_is_enough(chain, g, src, w);
 }
 
 }  // namespace

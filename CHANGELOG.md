@@ -11,7 +11,11 @@ Milestone 3: lens tools and polish.
 - **Chromatic Aberration**: lateral (red and blue scaled against green toward the edges) and
   longitudinal (red and blue softened, for colored fringes on hard edges), with a movable
   center.
-- A bundled look that uses them, **Old Glass**.
+- **Edge Softness**: blur that grows toward the frame's edges, like an old lens.
+- **Swing-Tilt**: a sharp band across the frame with blur growing away from it, for the
+  tilt-shift "miniature" look. Both blurs grow smoothly through a light and a full level, and
+  have on-image handles.
+- A bundled look that uses Lens Distortion and Chromatic Aberration, **Old Glass**.
 
 ### Plugin
 
