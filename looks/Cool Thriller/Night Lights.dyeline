@@ -1,0 +1,54 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Night Lights",
+    "tags": [
+      "night",
+      "anamorphic",
+      "cool"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "streaks",
+      "params": {
+        "amount": 0.5,
+        "threshold": 1.5,
+        "length": 8.0
+      }
+    },
+    {
+      "tool": "diffusion",
+      "params": {
+        "amount": 0.4,
+        "size": 1.2,
+        "highlights": 0.6,
+        "style": 2
+      }
+    },
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 210,
+        "shadows-amount": 0.35,
+        "highlights-hue": 45,
+        "highlights-amount": 0.2,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "s-curve",
+      "params": {
+        "amount": 0.35
+      }
+    },
+    {
+      "tool": "lens-vignette",
+      "params": {
+        "amount": -0.7
+      }
+    }
+  ]
+}

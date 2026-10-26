@@ -627,4 +627,66 @@ TEST(SoftFocus, TilesAndCroppedSourcesMatchTheWholeFrame) {
     expect_source_region_is_enough(chain, g, src, w);
 }
 
+// A frame split down the middle: `left` on the left half, `right` on the right.
+std::vector<float> split_frame(int w, int h, float left, float right) {
+    std::vector<float> f(static_cast<std::size_t>(w) * h * 3);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            for (int k = 0; k < 3; ++k) {
+                f[(static_cast<std::size_t>(y) * w + x) * 3 + k] = x < w / 2 ? left : right;
+            }
+        }
+    }
+    return f;
+}
+
+TEST(Diffusion, ProMistVeilsTheShadowsAndBlackProMistKeepsThem) {
+    const int w = 40;
+    const int h = 20;
+    // An edge between two dark tones, both under middle grey.
+    const std::vector<float> dark = split_frame(w, h, 0.01f, 0.08f);
+    const auto style = [&](int s) {
+        return render(compile({tool("diffusion", {{"amount", 1.0}, {"size", 4.0},
+                                                  {"highlights", 0.5}, {"style", s}})}),
+                      frame_geometry(w, h), dark);
+    };
+    const std::vector<float> diffusion = style(0);
+    const std::vector<float> pro_mist = style(1);
+    const std::vector<float> black = style(2);
+    // Pro-Mist scatters more of the shadows than plain Diffusion, lifting the darker side.
+    EXPECT_GT(at(pro_mist, w, w / 2 - 1, 10, 1), at(diffusion, w, w / 2 - 1, 10, 1));
+    EXPECT_GT(at(diffusion, w, w / 2 - 1, 10, 1), 0.012f);
+    // Black Pro-Mist leaves shadows alone.
+    EXPECT_NEAR(at(black, w, w / 2 - 1, 10, 1), 0.01f, 1e-4f);
+    EXPECT_NEAR(at(black, w, w / 2, 10, 1), 0.08f, 1e-3f);
+    // Highlights still bloom with Black Pro-Mist.
+    const std::vector<float> bright = render(
+        compile({tool("diffusion", {{"amount", 1.0}, {"size", 4.0}, {"style", 2}})}),
+        frame_geometry(w, h), split_frame(w, h, 0.01f, 8.0f));
+    EXPECT_GT(at(bright, w, w / 2 - 1, 10, 1), 0.2f);
+}
+
+TEST(Streaks, SpreadHighlightsAlongTheRowOnly) {
+    const int w = 81;
+    const int h = 41;
+    std::vector<float> src(static_cast<std::size_t>(w) * h * 3, 0.1f);
+    for (int k = 0; k < 3; ++k) {
+        src[(static_cast<std::size_t>(20) * w + 40) * 3 + k] = 500.0f;
+    }
+    const std::vector<float> out = render(
+        compile({tool("streaks", {{"amount", 1.0}, {"length", 10.0}})}), frame_geometry(w, h), src);
+    // Far along the row the streak is bright; one row away there is none.
+    EXPECT_GT(at(out, w, 25, 20, 2), 0.5f);
+    EXPECT_FLOAT_EQ(at(out, w, 40, 21, 2), 0.1f);
+    EXPECT_FLOAT_EQ(at(out, w, 25, 19, 0), 0.1f);
+    // Tinted blue by default.
+    EXPECT_GT(at(out, w, 25, 20, 2) - 0.1f, 1.5f * (at(out, w, 25, 20, 0) - 0.1f));
+    // The source region widens along x only.
+    const PixelRect s = dyeline::source_region(
+        compile({tool("streaks", {{"length", 10.0}})}).pass, frame_geometry(w, h));
+    EXPECT_LT(s.x1, 0);
+    EXPECT_EQ(s.y1, 0);
+    EXPECT_EQ(s.y2, h);
+}
+
 }  // namespace

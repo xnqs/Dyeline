@@ -665,10 +665,12 @@ void set_blur_size(double percent_of_width, dl_op& op) {
     op.p[DL_OP_BLUR_SIZE] = static_cast<float>(percent_of_width / 100.0);
 }
 
+// Diffusion Filter: amount, size, highlights and style (Diffusion, Pro-Mist, Black Pro-Mist).
 void encode_diffusion(const ParamValues& v, dl_op& op) {
     op.tool = DL_OP_DIFFUSION;
     op.p[0] = static_cast<float>(v[0]);
     op.p[1] = static_cast<float>(v[2]);
+    op.p[5] = v.size() > 3 ? static_cast<float>(std::floor(v[3])) : 0.0f;
     for (int k = 0; k < 3; ++k) {
         op.p[2 + k] = static_cast<float>(kLumaWeights[k]);
     }
@@ -737,6 +739,13 @@ void encode_halation(const ParamValues& v, dl_op& op) {
 
 bool halation_is_identity(const ParamValues& v) {
     return v[0] == 0.0 || (v[3] == 0.0 && v[4] == 0.0 && v[5] == 0.0);
+}
+
+// Streaks: Halation's glow, blurred along rows only, the long horizontal flares of an
+// anamorphic lens. Length is the blur's size, in percent of the frame's width.
+void encode_streaks(const ParamValues& v, dl_op& op) {
+    encode_halation(v, op);
+    op.tool = DL_OP_STREAKS;
 }
 
 std::vector<ToolSpec> make_tools() {
@@ -928,8 +937,18 @@ std::vector<ToolSpec> make_tools() {
     tools.push_back({"diffusion", "Diffusion Filter", ToolCategory::Lens, 1,
                      {{"amount", "Amount", 0.5, 0.0, 1.0},
                       {"size", "Size", 1.0, 0.05, 10.0},
-                      {"highlights", "Highlights", 0.5, 0.0, 1.0}},
+                      {"highlights", "Highlights", 0.5, 0.0, 1.0},
+                      {"style", "Style", 0.0, 0.0, 2.0, ParamKind::Choice,
+                       {"Diffusion", "Pro-Mist", "Black Pro-Mist"}}},
                      nullptr, encode_diffusion, diffusion_is_identity, nullptr, nullptr, false});
+    tools.push_back({"streaks", "Streaks", ToolCategory::Lens, 1,
+                     {{"amount", "Amount", 0.6, 0.0, 2.0},
+                      {"threshold", "Threshold", 1.0, 0.05, 16.0},
+                      {"length", "Length", 6.0, 0.5, 30.0},
+                      {"tint-red", "Tint Red", 0.5, 0.0, 1.0},
+                      {"tint-green", "Tint Green", 0.75, 0.0, 1.0},
+                      {"tint-blue", "Tint Blue", 1.0, 0.0, 1.0}},
+                     nullptr, encode_streaks, halation_is_identity, nullptr, nullptr, false});
     tools.push_back({"local-contrast", "Local Contrast", ToolCategory::Post, 1,
                      {{"amount", "Amount", 0.3, -1.0, 1.0},
                       {"size", "Size", 1.5, 0.1, 10.0}},

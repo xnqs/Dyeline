@@ -54,7 +54,7 @@ TEST(Tools, AllAreRegistered) {
                            "telecine-net", "gradient-tint", "grad-exposure", "spot-exposure",
                            "fill-light", "spot-fill", "four-way", "blockbuster", "color-filter",
                            "duotone", "local-contrast", "lens-distortion", "chromatic-aberration",
-                           "edge-softness", "swing-tilt"}) {
+                           "edge-softness", "swing-tilt", "streaks"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }

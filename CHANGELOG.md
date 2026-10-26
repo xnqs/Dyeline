@@ -15,7 +15,11 @@ Milestone 3: lens tools and polish.
 - **Swing-Tilt**: a sharp band across the frame with blur growing away from it, for the
   tilt-shift "miniature" look. Both blurs grow smoothly through a light and a full level, and
   have on-image handles.
-- A bundled look that uses Lens Distortion and Chromatic Aberration, **Old Glass**.
+- **Streaks**: the long horizontal flares of an anamorphic lens, from light above a threshold.
+- The **Diffusion Filter** gains a Style: **Pro-Mist** (a milky veil over the shadows) and
+  **Black Pro-Mist** (highlights bloom, shadows stay deep). Existing looks keep the plain
+  Diffusion style.
+- Two bundled looks that use them: **Old Glass** and **Night Lights**.
 
 ### Plugin
 

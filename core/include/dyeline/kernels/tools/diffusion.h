@@ -7,18 +7,29 @@
 //   combine:  out = c + amount * (blur(e) - e)
 // With Highlights 0 every tone scatters equally and the result is a mix toward the blurred
 // image; raising it scatters mostly the light from bright areas.
+//
+// Styles change which light scatters. Pro-Mist scatters at least half of every tone, so the
+// shadows lift into a milky veil around a bloom. Black Pro-Mist scatters only light above the
+// midtones, so highlights bloom while the shadows keep their contrast.
 #ifndef DYELINE_KERNELS_TOOLS_DIFFUSION_H
 #define DYELINE_KERNELS_TOOLS_DIFFUSION_H
 
 #include "../dl_kernel.h"
 
-// p[0]: amount; p[1]: highlights, 0 to 1; p[2..4]: the luminance weights. p[15], used by
-// the host only, holds the blur size.
+// p[0]: amount; p[1]: highlights, 0 to 1; p[2..4]: the luminance weights; p[5]: the style, 0
+// Diffusion, 1 Pro-Mist, 2 Black Pro-Mist. p[15], used by the host only, holds the blur size.
 DL_DEVICE float dl_diffusion_weight(dl_float4 c, DL_CONSTANT const float* p) {
     const float y = p[2] * c.x + p[3] * c.y + p[4] * c.z;
     // 0 from a stop under middle grey, rising to 1 three stops over it.
     const float t = y > 0.0f ? dl_smoothstep(-1.0f, 3.0f, dl_log2(y / 0.18f)) : 0.0f;
-    return 1.0f - p[1] * (1.0f - t);
+    const float w = 1.0f - p[1] * (1.0f - t);
+    if (p[5] == 1.0f) {
+        return 0.5f + 0.5f * w;
+    }
+    if (p[5] == 2.0f) {
+        return t * w;
+    }
+    return w;
 }
 
 DL_DEVICE dl_float4 dl_tool_diffusion_extract(dl_float4 c, DL_CONSTANT const float* p) {

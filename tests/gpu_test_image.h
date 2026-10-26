@@ -134,7 +134,7 @@ inline CompiledChain table_free_chain() {
 
 // A chain with both warp tools, off center, and spatial tools before, between and after
 // them, so the stage passes and reading through a warp run on the GPU, plus the two-level
-// blurs of Edge Softness and Swing-Tilt.
+// blurs of Edge Softness and Swing-Tilt, Streaks' row-only blur and a Diffusion style.
 inline CompiledChain warp_chain() {
     Look look;
     auto add = [&](const char* id, double strength, nlohmann::json params) {
@@ -154,6 +154,8 @@ inline CompiledChain warp_chain() {
     add("lens-vignette", 1.0, {{"amount", -0.8}});
     add("swing-tilt", 0.9, {{"blur", 2.0}, {"angle", 20.0}, {"center-y", 0.1}});
     add("edge-softness", 1.0, {{"blur", 1.5}, {"size", 0.3}});
+    add("streaks", 0.8, {{"amount", 1.0}, {"threshold", 0.5}, {"length", 8.0}});
+    add("diffusion", 0.7, {{"amount", 0.5}, {"size", 2.0}, {"style", 1}});
     CompiledChain chain;
     std::string error;
     compile_chain(look, 0.8, chain, error);

@@ -457,6 +457,24 @@ resolution and render scale.
 | `amount` | 0.5 | 0 to 1 | How much of the blurred copy is mixed in. |
 | `size` | 1 | 0.05 to 10 | Blur size, in percent of the frame's width. |
 | `highlights` | 0.5 | 0 to 1 | At 0 every tone spreads alike; at 1 mostly highlights spread. |
+| `style` | Diffusion | Diffusion, Pro-Mist, Black Pro-Mist | Which light scatters (below). |
+
+Styles: **Pro-Mist** scatters at least half of every tone, so shadows lift into a milky veil
+around the bloom. **Black Pro-Mist** scatters only light above the midtones, so highlights bloom
+while the shadows keep their depth.
+
+## Streaks (`streaks`)
+
+The long horizontal flares an anamorphic lens draws through bright lights. Light above
+Threshold is spread along its row only, tinted, and added on top, so the rest of the image is
+left alone. Length is a fraction of the frame's width.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 0.6 | 0 to 2 | Strength of the streaks. |
+| `threshold` | 1 | 0.05 to 16 | Scene-linear level above which light streaks (0.18 is mid grey). |
+| `length` | 6 | 0.5 to 30 | How far streaks reach, in percent of the frame's width. |
+| `tint-red`, `tint-green`, `tint-blue` | 0.5, 0.75, 1 | 0 to 1 | Color of the streaks. |
 
 ## Local Contrast (`local-contrast`)
 

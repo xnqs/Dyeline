@@ -48,7 +48,9 @@ Blur op_blur(const dl_op& op, const RenderGeometry& g) {
         return Radius{box_radius(s / g.canonical_x), box_radius(s / g.canonical_y)};
     };
     Blur blur;
-    if (dl_blur_levels(op.tool) == 2) {
+    if (dl_blur_is_horizontal(op.tool)) {
+        blur.first = {radius(sigma).x, 0};
+    } else if (dl_blur_levels(op.tool) == 2) {
         blur.two_levels = true;
         blur.first = radius(sigma / 3.0);
         blur.second = radius(sigma * std::sqrt(8.0) / 3.0);
