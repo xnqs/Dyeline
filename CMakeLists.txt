@@ -80,6 +80,7 @@ endif()
 
 add_subdirectory(core)
 add_subdirectory(plugin)
+add_subdirectory(bench)
 
 if(DYELINE_BUILD_TESTS)
     enable_testing()
