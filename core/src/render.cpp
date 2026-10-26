@@ -293,6 +293,43 @@ void parallel_for(int count, unsigned threads, const std::function<void(int)>& b
     }
 }
 
+// Lines `first` to `first + count - 1` of a box blur, side by side: the same sums as
+// dl_box_line, in the same order, so the result is identical, but a blur down columns reads
+// neighboring columns together instead of striding down one at a time.
+void box_lines_cpu(float* work, const dl_box_args& b, int first, int count) {
+    constexpr int kMaxLines = 32;
+    const int taps = 2 * b.radius + 1;
+    const float scale = 1.0f / static_cast<float>(taps);
+    float s[kMaxLines][3];
+    for (int k = 0; k < b.length; ++k) {
+        for (int l = 0; l < count; ++l) {
+            const int in0 = b.in_offset + (first + l) * b.in_cross;
+            float* sum = s[l];
+            if (k % 32 == 0) {
+                sum[0] = 0.0f;
+                sum[1] = 0.0f;
+                sum[2] = 0.0f;
+                for (int t = 0; t < taps; ++t) {
+                    const int i = in0 + (k + t) * b.in_step;
+                    sum[0] += work[i];
+                    sum[1] += work[i + 1];
+                    sum[2] += work[i + 2];
+                }
+            } else {
+                const int add = in0 + (k + taps - 1) * b.in_step;
+                const int sub = in0 + (k - 1) * b.in_step;
+                sum[0] += work[add] - work[sub];
+                sum[1] += work[add + 1] - work[sub + 1];
+                sum[2] += work[add + 2] - work[sub + 2];
+            }
+            const int o = b.out_offset + (first + l) * b.out_cross + k * b.out_step;
+            work[o] = sum[0] * scale;
+            work[o + 1] = sum[1] * scale;
+            work[o + 2] = sum[2] * scale;
+        }
+    }
+}
+
 }  // namespace
 
 PixelRect source_region(const dl_chain& chain, const RenderGeometry& g) {
@@ -366,12 +403,41 @@ RenderPlan plan_render(const dl_chain& chain, const RenderGeometry& g) {
             next += rgb_floats(regions.stage[i]) / 3 * 4;
         }
     }
+    // The cache: the color at the input of the first spatial op after the source or a warp,
+    // when ops come before it, so passes after it need not run those again. Alpha-only
+    // images have no color to keep.
+    std::vector<bool> caches(static_cast<std::size_t>(chain.count), false);
+    std::size_t cache_floats = 0;
+    for (int i = 0, start = 0; i < chain.count && g.channels != 1; ++i) {
+        const int tool = chain.ops[i].tool;
+        if (dl_is_warp(tool)) {
+            start = i + 1;
+        } else if (dl_is_spatial(tool)) {
+            if (i > start) {
+                caches[static_cast<std::size_t>(i)] = true;
+                cache_floats = std::max(cache_floats, rgb_floats(regions.extract[i]) / 3 * 4);
+            }
+            start = chain.count;  // only the first spatial op of a run
+        }
+    }
+    const std::size_t cache_offset = next;
+    next += cache_floats;
     plan.work_floats = next;
 
-    // Passes after a warp read its input image through it.
+    // Passes after a warp read its input image through it, and passes after a cache is
+    // written read that.
     int stage = -1;
+    int cache = -1;
     const auto args_for = [&](const PixelRect& region) {
         dl_image_args args = pass_args(g, region);
+        if (cache >= 0) {
+            const PixelRect& r = regions.extract[cache];
+            args.cache_op = cache + 1;
+            args.cache_offset = static_cast<int>(cache_offset);
+            args.cache_x0 = r.x1;
+            args.cache_y0 = r.y1;
+            args.cache_width = r.width();
+        }
         if (stage >= 0) {
             const PixelRect& r = regions.stage[stage];
             args.stage_op = stage + 1;
@@ -394,16 +460,22 @@ RenderPlan plan_render(const dl_chain& chain, const RenderGeometry& g) {
             st.stop = i;
             plan.passes.push_back(st);
             stage = i;
+            cache = -1;
             continue;
         }
         if (!dl_is_spatial(tool)) {
             continue;
         }
         const PixelRect& extract = regions.extract[i];
+        const bool writes_cache = caches[static_cast<std::size_t>(i)];
+        if (writes_cache) {
+            cache = i;
+        }
         RenderPass ex;
         ex.kind = PassKind::Extract;
         ex.image = args_for(extract);
         ex.image.work_offset = static_cast<int>(a);
+        ex.image.cache_write = writes_cache ? 1 : 0;
         ex.stop = i;
         plan.passes.push_back(ex);
 
@@ -442,8 +514,18 @@ void run_plan_cpu(const float* src, float* dst, const float* table, const Render
                 });
                 break;
             case PassKind::Blur:
-                parallel_for(pass.box.lines, threads,
-                             [&](int line) { dl_box_line(work.data(), pass.box, line); });
+                if (pass.box.in_cross == 3) {
+                    // Down columns: blocks of neighboring columns, which share cache lines.
+                    constexpr int kBlock = 32;
+                    parallel_for((pass.box.lines + kBlock - 1) / kBlock, threads, [&](int block) {
+                        const int first = block * kBlock;
+                        box_lines_cpu(work.data(), pass.box, first,
+                                      std::min(kBlock, pass.box.lines - first));
+                    });
+                } else {
+                    parallel_for(pass.box.lines, threads,
+                                 [&](int line) { dl_box_line(work.data(), pass.box, line); });
+                }
                 break;
             case PassKind::Final:
                 parallel_for(pass.image.height, threads, [&](int y) {

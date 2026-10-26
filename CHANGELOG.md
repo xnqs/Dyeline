@@ -30,6 +30,14 @@ Milestone 3: lens tools and polish.
   OpenCL device, and compares them with the CPU reference. [docs/hosts.md](docs/hosts.md)
   lists what each host is checked against, and the hand checks for Resolve and Nuke.
 
+### Performance
+
+- `dyeline_bench` times each tool and bundled look on the CPU and Dyeline's own GPU device
+  ([docs/performance.md](docs/performance.md)).
+- Looks with spatial tools render 20 to 30% faster: the color before the first spatial tool
+  is kept rather than worked out again by every later pass. Warps read fewer taps, and CPU
+  blurs down columns use the cache better. Old Glass is 28% faster on the CPU.
+
 ## 0.5.0 beta
 
 Milestone 2: film and selective tools. Looks made with 0.1 load unchanged.
