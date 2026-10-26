@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 beta
 
-Milestone 3: lens tools and polish.
+Milestone 3: lens tools and polish. Looks made with 0.1 and 0.5 load and render unchanged.
 
 ### New tools
 
@@ -37,6 +37,13 @@ Milestone 3: lens tools and polish.
 - Looks with spatial tools render 20 to 30% faster: the color before the first spatial tool
   is kept rather than worked out again by every later pass. Warps read fewer taps, and CPU
   blurs down columns use the cache better. Old Glass is 28% faster on the CPU.
+
+### Known issues
+
+- Warps leave transparent black where they read past the frame's edges (Lens Distortion's
+  corners, for instance); use Zoom to fill the frame.
+- The film stocks from 0.5 still await a colorist's check, and the installers aren't signed yet.
+- Resolve and Nuke are checked by hand ([docs/hosts.md](docs/hosts.md)); only Natron renders on CI.
 
 ## 0.5.0 beta
 
