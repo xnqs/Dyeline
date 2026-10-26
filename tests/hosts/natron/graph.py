@@ -25,3 +25,8 @@ writer.setScriptName("TestWrite")
 writer.connectInput(0, effect)
 # Write at the input's size, not the project's.
 writer.getParam("formatType").setValue(0)
+
+# For diagnosing differences: the project's format sets the frame that lens tools work in.
+fmt = app.getProjectParam("outputFormat")
+if fmt is not None:
+    print("Natron project format: %s" % fmt.getOption(fmt.getValue()))

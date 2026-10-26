@@ -115,6 +115,10 @@ def compare(name, got, want):
     print("%-10s max relative error %.2e at row %d, column %d, channel %d (got %.5f, want %.5f)"
           % (name, error[worst], worst[0], worst[1], worst[2], got[worst], want[worst]))
     if error[worst] > TOLERANCE:
+        bad = np.argwhere(error.max(axis=2) > TOLERANCE)
+        print("  %d pixels differ, rows %d-%d, columns %d-%d; at the worst, got RGBA %s, want %s"
+              % (len(bad), bad[:, 0].min(), bad[:, 0].max(), bad[:, 1].min(), bad[:, 1].max(),
+                 np.round(got[worst[0], worst[1]], 4), np.round(want[worst[0], worst[1]], 4)))
         return "%s differs from the CPU reference" % name
     return None
 
@@ -166,6 +170,8 @@ def main():
                 continue
             problem = compare(label, read_exr(outputs[-1]), want)
             if problem:
+                print("\n".join("  " + line for line in result.stdout.splitlines()
+                                 if "project format" in line or "rror" in line))
                 failures.append(problem)
 
     if failures:
