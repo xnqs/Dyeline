@@ -51,7 +51,11 @@ Dyeline targets OFX hosts on Windows, macOS and Linux. First targets:
 
 - DaVinci Resolve
 - Natron
+- Foundry Nuke
 - EffectCraft (OpenFX fork)
+
+See [docs/hosts.md](docs/hosts.md) for what is checked in each host, automatically and by
+hand.
 
 New to Dyeline? Start with the [user guide](docs/user-guide.md).
 

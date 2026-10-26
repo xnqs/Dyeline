@@ -71,6 +71,43 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+      # A real OFX host: render test looks through the built plugin in Natron, on the CPU and
+      # on Dyeline's own OpenCL device (PoCL), and compare with the CPU reference.
+      - name: Render in Natron (Linux)
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATRON_VERSION: v2.5.0
+        run: |
+          assets=$(gh release view "$NATRON_VERSION" --repo NatronGitHub/Natron --json assets -q '.assets[].name')
+          echo "$assets"
+          asset=$(echo "$assets" | grep -iE 'linux.*64.*\.tar\.xz$' | grep -i 'no-installer' | head -1)
+          [ -n "$asset" ] || asset=$(echo "$assets" | grep -iE 'linux.*64.*\.tar\.xz$' | head -1)
+          gh release download "$NATRON_VERSION" --repo NatronGitHub/Natron --pattern "$asset" --dir "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/natron"
+          tar -xJf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP/natron"
+          renderer=$(find "$RUNNER_TEMP/natron" -name NatronRenderer \( -type f -o -type l \) |
+                     awk '{ print length, $0 }' | sort -n | head -1 | cut -d' ' -f2-)
+          echo "NatronRenderer: $renderer"
+          # The portable build bundles its own libraries but loads OpenGL and X11 from the system.
+          sudo apt-get install -y --no-install-recommends libglu1-mesa libgl1 libegl1 libopengl0 \
+            libfontconfig1 libxrender1 libxext6 libxi6 libsm6 libice6 libxkbcommon0 libxcb1
+          missing=$(find "$(dirname "$renderer")" -maxdepth 1 -type f -perm -u+x -exec ldd {} \; 2>/dev/null |
+                    grep 'not found' | sort -u || true)
+          if [ -n "$missing" ]; then echo "Missing libraries:"; echo "$missing"; fi
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet numpy OpenEXR
+          "$RUNNER_TEMP/venv/bin/python" tests/hosts/natron/run.py --natron "$renderer" --plugin-dir build \
+            --reference build/tests/dyeline_render_frame --work "$RUNNER_TEMP/natron-work"
+
+      - name: Upload Natron renders (Linux, on failure)
+        if: failure() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: natron-renders
+          path: ${{ runner.temp }}/natron-work
+          if-no-files-found: ignore
+
       - name: Upload plugin bundle
         uses: actions/upload-artifact@v4
         with:
