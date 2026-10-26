@@ -26,6 +26,9 @@ Milestone 3: lens tools and polish.
 - Tools can now move pixels, not only recolor them: the render plan renders what comes before
   a warp to an image and reads it back through the warp, on the CPU and every GPU backend.
   The plugin asks the host for exactly the source a warp reads.
+- CI renders test looks in Natron 2.5 with the built plugin, on the CPU and on Dyeline's own
+  OpenCL device, and compares them with the CPU reference. [docs/hosts.md](docs/hosts.md)
+  lists what each host is checked against, and the hand checks for Resolve and Nuke.
 
 ## 0.5.0 beta
 

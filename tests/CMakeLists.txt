@@ -93,3 +93,8 @@ target_link_libraries(dyeline_plugin_load_test PRIVATE GTest::gtest_main ${CMAKE
 dyeline_set_warnings(dyeline_plugin_load_test)
 add_dependencies(dyeline_plugin_load_test dyeline_ofx)
 gtest_discover_tests(dyeline_plugin_load_test)
+
+# The CPU reference for tests that render in a real host (tests/hosts).
+add_executable(dyeline_render_frame hosts/render_frame.cpp)
+target_link_libraries(dyeline_render_frame PRIVATE Dyeline::core)
+dyeline_set_warnings(dyeline_render_frame)
