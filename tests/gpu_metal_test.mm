@@ -102,4 +102,28 @@ TEST(MetalBackend, OwnDeviceMatchesCpuReference) {
     }
 }
 
+// Warps on Dyeline's own device: stage passes, and passes reading through a warp.
+TEST(MetalBackend, OwnDeviceMatchesCpuReferenceThroughWarps) {
+    std::string error;
+    if (dyeline::metal::own_device_name(error).empty()) {
+        GTEST_SKIP() << "no Metal device: " << error;
+    }
+    const int width = 37;
+    const int height = 23;
+    const std::vector<float> src = dyeline::test::make_frame(width, height);
+    const dyeline::RenderGeometry geometry = dyeline::test::window_geometry(width, height);
+    const dyeline::CompiledChain chain = dyeline::test::warp_chain();
+    ASSERT_EQ(chain.pass.count, 6);
+    const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, geometry);
+    const std::vector<float> expected = dyeline::test::cpu_reference(src, plan, chain);
+    std::vector<float> result = expected;
+    std::fill(result.begin(), result.end(), 0.0f);
+    ASSERT_EQ(dyeline::metal::render_plan_own_device(src.data(), src.size(), result.data(),
+                                                     result.size(), plan, nullptr, 0),
+              "");
+    for (std::size_t i = 0; i < result.size(); ++i) {
+        ASSERT_NEAR(result[i], expected[i], dyeline::test::tolerance(expected[i])) << "index " << i;
+    }
+}
+
 }  // namespace

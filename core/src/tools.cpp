@@ -608,6 +608,38 @@ bool lens_vignette_is_identity(const ParamValues& v) {
     return v[0] == 0.0;
 }
 
+// Lens Distortion: Amount and Edges scale the Brown-Conrady k1 and k2 terms (lens_warp.h).
+// At these scales the distortion folds back on itself only at the strongest pincushion settings.
+constexpr double kDistortionK1 = 0.25;
+constexpr double kDistortionK2 = 0.1;
+
+void encode_lens_distortion(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_LENS_DISTORTION;
+    op.p[0] = static_cast<float>(v[0] * kDistortionK1);
+    op.p[1] = static_cast<float>(v[1] * kDistortionK2);
+    op.p[2] = static_cast<float>(1.0 / v[2]);
+    op.p[3] = static_cast<float>(v[3]);
+    op.p[4] = static_cast<float>(v[4]);
+}
+
+bool lens_distortion_is_identity(const ParamValues& v) {
+    return v[0] == 0.0 && v[1] == 0.0 && v[2] == 1.0;
+}
+
+// Chromatic Aberration: Red, Blue and Fringe are percentages of the frame's width.
+void encode_chromatic_aberration(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_CHROMATIC_ABERRATION;
+    for (int i = 0; i < 3; ++i) {
+        op.p[i] = static_cast<float>(v[static_cast<std::size_t>(i)] / 100.0);
+    }
+    op.p[3] = static_cast<float>(v[3]);
+    op.p[4] = static_cast<float>(v[4]);
+}
+
+bool chromatic_aberration_is_identity(const ParamValues& v) {
+    return v[0] == 0.0 && v[1] == 0.0 && v[2] == 0.0;
+}
+
 // Grain: at Amount 1 the midtones move by up to half a stop either way.
 constexpr double kGrainMaxStops = 0.5;
 
@@ -827,6 +859,22 @@ std::vector<ToolSpec> make_tools() {
                       {"center-y", "Center Y", 0.0, -1.0, 1.0}},
                      nullptr, encode_lens_vignette, lens_vignette_is_identity, nullptr, nullptr, false,
                      {{HandleKind::Point, "center-x", "center-y"}}});
+    tools.push_back({"lens-distortion", "Lens Distortion", ToolCategory::Lens, 1,
+                     {{"amount", "Amount", 0.3, -1.0, 1.0},
+                      {"edges", "Edges", 0.0, -1.0, 1.0},
+                      {"zoom", "Zoom", 1.0, 0.5, 2.0},
+                      {"center-x", "Center X", 0.0, -1.0, 1.0},
+                      {"center-y", "Center Y", 0.0, -1.0, 1.0}},
+                     nullptr, encode_lens_distortion, lens_distortion_is_identity, nullptr, nullptr,
+                     false, {{HandleKind::Point, "center-x", "center-y"}}});
+    tools.push_back({"chromatic-aberration", "Chromatic Aberration", ToolCategory::Lens, 1,
+                     {{"red", "Red", 0.15, -1.0, 1.0},
+                      {"blue", "Blue", -0.15, -1.0, 1.0},
+                      {"fringe", "Fringe", 0.0, 0.0, 0.5},
+                      {"center-x", "Center X", 0.0, -1.0, 1.0},
+                      {"center-y", "Center Y", 0.0, -1.0, 1.0}},
+                     nullptr, encode_chromatic_aberration, chromatic_aberration_is_identity,
+                     nullptr, nullptr, false, {{HandleKind::Point, "center-x", "center-y"}}});
     tools.push_back({"grain", "Grain", ToolCategory::Camera, 1,
                      {{"amount", "Amount", 0.3, 0.0, 1.0},
                       {"size", "Size", 1.5, 0.5, 8.0},

@@ -365,6 +365,40 @@ render scale.
 | `center-x` | 0 | -1 to 1 | Moves the center, as a fraction of half the frame's width. |
 | `center-y` | 0 | -1 to 1 | Moves the center, as a fraction of half the frame's height (up is positive). |
 
+## Lens Distortion (`lens-distortion`)
+
+Bends straight lines the way a wide or long lens does. Positive Amount bows them outward from
+the center (barrel), negative pinches them in (pincushion); Edges bends mostly the corners,
+and with the opposite sign to Amount gives the wavy "mustache" of some wide lenses. Distances
+are measured so the frame's corners are at 1. Barrel distortion pulls the corners in from
+outside the frame, which shows as transparent black there; raise Zoom to fill the frame
+again. Strength scales how far pixels move. See [the lens spec](spec/lens.md).
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `amount` | 0.3 | -1 to 1 | Barrel (positive) or pincushion (negative). |
+| `edges` | 0 | -1 to 1 | Extra bending that grows fastest toward the corners. |
+| `zoom` | 1 | 0.5 to 2 | Scales the image about the center; above 1 crops in. |
+| `center-x` | 0 | -1 to 1 | The lens's center, as a fraction of half the frame's width. |
+| `center-y` | 0 | -1 to 1 | The lens's center, as a fraction of half the frame's height (up is positive). |
+
+## Chromatic Aberration (`chromatic-aberration`)
+
+The color fringes of a simple lens. Red and Blue scale those channels about the center
+against green, so colors split apart more toward the edges (lateral aberration); positive
+moves a channel outward. Fringe softens red and blue but not green everywhere in the frame
+(longitudinal aberration), leaving purple and green edges on high-contrast detail. Shifts and
+the Fringe radius are percentages of the frame's width, so the look is the same at any
+resolution. Strength scales all three.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `red` | 0.15 | -1 to 1 | How far red moves at the corners, in percent of the frame's width. |
+| `blue` | -0.15 | -1 to 1 | How far blue moves at the corners, in percent of the frame's width. |
+| `fringe` | 0 | 0 to 0.5 | Radius of the red and blue softening, in percent of the frame's width. |
+| `center-x` | 0 | -1 to 1 | The lens's center, as a fraction of half the frame's width. |
+| `center-y` | 0 | -1 to 1 | The lens's center, as a fraction of half the frame's height (up is positive). |
+
 ## Grain (`grain`)
 
 Film-like grain. Each pixel moves by a small random amount in stops, strongest in the midtones

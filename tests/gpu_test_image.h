@@ -132,6 +132,31 @@ inline CompiledChain table_free_chain() {
     return chain;
 }
 
+// A chain with both warp tools, off center, and spatial tools before, between and after
+// them, so the stage passes and reading through a warp run on the GPU.
+inline CompiledChain warp_chain() {
+    Look look;
+    auto add = [&](const char* id, double strength, nlohmann::json params) {
+        ToolEntry entry;
+        entry.tool = id;
+        entry.strength = strength;
+        entry.params = std::move(params);
+        look.chain.push_back(std::move(entry));
+    };
+    add("diffusion", 0.9, {{"amount", 0.6}, {"size", 4.0}});
+    add("lens-distortion", 0.8, {{"amount", 0.7}, {"edges", -0.4}, {"zoom", 1.1},
+                                 {"center-x", 0.2}, {"center-y", -0.1}});
+    add("exposure", 0.9, {{"stops", 0.5}});
+    add("halation", 0.8, {{"amount", 1.0}, {"threshold", 0.5}, {"size", 3.0}});
+    add("chromatic-aberration", 0.9, {{"red", 0.8}, {"blue", -0.6}, {"fringe", 0.4},
+                                      {"center-x", -0.3}});
+    add("lens-vignette", 1.0, {{"amount", -0.8}});
+    CompiledChain chain;
+    std::string error;
+    compile_chain(look, 0.8, chain, error);
+    return chain;
+}
+
 // The CPU result for the same plan: the reference every GPU backend must match.
 inline std::vector<float> cpu_reference(const std::vector<float>& src, const RenderPlan& plan,
                                         const CompiledChain& chain) {

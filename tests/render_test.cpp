@@ -1,11 +1,12 @@
-// The render plan: passes for spatial tools, the blur's size, Diffusion and Halation, and
-// renders split into tiles or given only the source the plugin asks for matching one render
-// of the whole frame.
+// The render plan: passes for spatial and warp tools, the blur's size, Diffusion, Halation,
+// Lens Distortion and Chromatic Aberration, and renders split into tiles or given only the
+// source the plugin asks for matching one render of the whole frame.
 
 #include "dyeline/render.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -86,9 +87,11 @@ TEST(RenderPlan, OnePassWithoutSpatialTools) {
     ASSERT_EQ(plan.passes.size(), 1u);
     EXPECT_EQ(plan.passes[0].kind, dyeline::PassKind::Final);
     EXPECT_EQ(plan.work_floats, 0u);
-    const dyeline::PixelMargin margin = dyeline::spatial_margin(chain.pass, frame_geometry(8, 8));
-    EXPECT_EQ(margin.x, 0);
-    EXPECT_EQ(margin.y, 0);
+    const PixelRect source = dyeline::source_region(chain.pass, frame_geometry(8, 8));
+    EXPECT_EQ(source.x1, 0);
+    EXPECT_EQ(source.y1, 0);
+    EXPECT_EQ(source.x2, 8);
+    EXPECT_EQ(source.y2, 8);
 }
 
 TEST(RenderPlan, EachSpatialToolAddsAnExtractAndSixBlurs) {
@@ -104,11 +107,14 @@ TEST(RenderPlan, EachSpatialToolAddsAnExtractAndSixBlurs) {
     EXPECT_EQ(plan.passes[7].stop, 2);
     EXPECT_EQ(plan.passes.back().kind, dyeline::PassKind::Final);
     // Sigma 10 pixels gives box radius 10 and sigma 4 gives 4; three passes each.
-    const dyeline::PixelMargin margin = dyeline::spatial_margin(chain.pass, g);
-    EXPECT_EQ(margin.x, 3 * 10 + 3 * 4);
-    EXPECT_EQ(margin.y, margin.x);
+    const PixelRect source = dyeline::source_region(chain.pass, g);
+    const int margin = 3 * 10 + 3 * 4;
+    EXPECT_EQ(source.x1, -margin);
+    EXPECT_EQ(source.y1, -margin);
+    EXPECT_EQ(source.x2, 200 + margin);
+    EXPECT_EQ(source.y2, 100 + margin);
     // Diffusion's extract covers the window plus both blurs' reach.
-    EXPECT_EQ(plan.passes[0].image.width, 200 + 2 * margin.x);
+    EXPECT_EQ(plan.passes[0].image.width, 200 + 2 * margin);
 }
 
 TEST(Blur, SpreadsLikeAGaussianOfTheSizeAndKeepsTheLight) {
@@ -259,36 +265,265 @@ TEST(RenderPlan, TilesMatchTheWholeFrame) {
     }
 }
 
-TEST(RenderPlan, TheSourceMarginIsEnough) {
-    // Give a tile only the source the plugin would ask for, the window grown by the margin,
-    // and it must render as if it had the whole frame.
-    const CompiledChain chain = compile({tool("diffusion", {{"amount", 0.6}, {"size", 4.0}}),
-                                         tool("halation", {{"amount", 0.8}, {"size", 2.0}})});
-    const int w = 90;
-    const int h = 70;
-    const std::vector<float> frame = test_frame(w, h);
-    RenderGeometry g = frame_geometry(w, h);
-    g.window = {40, 30, 52, 41};
-    g.dst_bounds = g.window;
-    g.dst_row_floats = g.window.width() * 3;
-    const dyeline::PixelMargin m = dyeline::spatial_margin(chain.pass, g);
-    ASSERT_GT(m.x, 0);
-    ASSERT_LT(g.window.x2 + m.x, w);  // the margin stays inside the frame
-    ASSERT_LT(g.window.y2 + m.y, h);
+// Renders `g.window` given only the source region the plugin would ask for, clipped to the
+// frame as hosts do, and checks it matches a render that had the whole frame.
+void expect_source_region_is_enough(const CompiledChain& chain, const RenderGeometry& g,
+                                    const std::vector<float>& frame, int w) {
     const std::vector<float> full = render(chain, g, frame);
-
+    const int h = static_cast<int>(frame.size()) / (w * 3);
+    PixelRect s = dyeline::source_region(chain.pass, g);
+    s = {std::max(s.x1, 0), std::max(s.y1, 0), std::min(s.x2, w), std::min(s.y2, h)};
+    ASSERT_GT(s.width(), 0);
+    ASSERT_GT(s.height(), 0);
     RenderGeometry cropped = g;
-    cropped.src_bounds = {g.window.x1 - m.x, g.window.y1 - m.y, g.window.x2 + m.x, g.window.y2 + m.y};
-    cropped.src_row_floats = cropped.src_bounds.width() * 3;
+    cropped.src_bounds = s;
+    cropped.src_row_floats = s.width() * 3;
     std::vector<float> src;
-    for (int y = cropped.src_bounds.y1; y < cropped.src_bounds.y2; ++y) {
-        for (int x = cropped.src_bounds.x1; x < cropped.src_bounds.x2; ++x) {
+    for (int y = s.y1; y < s.y2; ++y) {
+        for (int x = s.x1; x < s.x2; ++x) {
             for (int k = 0; k < 3; ++k) {
                 src.push_back(at(frame, w, x, y, k));
             }
         }
     }
     EXPECT_EQ(render(chain, cropped, src), full);
+}
+
+TEST(RenderPlan, TheSourceRegionIsEnough) {
+    // Give a tile only the source the plugin would ask for, the window grown by the blurs'
+    // reach, and it must render as if it had the whole frame.
+    const CompiledChain chain = compile({tool("diffusion", {{"amount", 0.6}, {"size", 4.0}}),
+                                         tool("halation", {{"amount", 0.8}, {"size", 2.0}})});
+    const int w = 90;
+    const int h = 70;
+    RenderGeometry g = frame_geometry(w, h);
+    g.window = {40, 30, 52, 41};
+    g.dst_bounds = g.window;
+    g.dst_row_floats = g.window.width() * 3;
+    const PixelRect s = dyeline::source_region(chain.pass, g);
+    ASSERT_LT(s.x1, g.window.x1);
+    ASSERT_LT(s.x2, w);  // the region stays inside the frame
+    ASSERT_LT(s.y2, h);
+    expect_source_region_is_enough(chain, g, test_frame(w, h), w);
+}
+
+// A frame whose red, green and blue are all `value` in column `column` and 0 elsewhere.
+std::vector<float> column_frame(int w, int h, int column, float value) {
+    std::vector<float> f(static_cast<std::size_t>(w) * h * 3, 0.0f);
+    for (int y = 0; y < h; ++y) {
+        for (int k = 0; k < 3; ++k) {
+            f[(static_cast<std::size_t>(y) * w + column) * 3 + k] = value;
+        }
+    }
+    return f;
+}
+
+// The column where channel k of row y is brightest.
+int brightest_column(const std::vector<float>& f, int w, int y, int k) {
+    int best = 0;
+    for (int x = 1; x < w; ++x) {
+        if (at(f, w, x, y, k) > at(f, w, best, y, k)) {
+            best = x;
+        }
+    }
+    return best;
+}
+
+TEST(Warp, ARenderPlanHasAStagePassAndReadsItAfterward) {
+    const CompiledChain chain = compile({tool("exposure", {{"stops", 1.0}}),
+                                         tool("lens-distortion", {{"amount", 0.5}}),
+                                         tool("diffusion", {{"size", 5.0}}),
+                                         tool("exposure", {{"stops", -1.0}})});
+    const RenderGeometry g = frame_geometry(200, 100);
+    const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, g);
+    ASSERT_EQ(plan.passes.size(), 9u);
+    EXPECT_EQ(plan.passes[0].kind, dyeline::PassKind::Extract);
+    EXPECT_EQ(plan.passes[0].stop, 1);
+    EXPECT_EQ(plan.passes[0].image.stage_op, 0);  // reads the source
+    EXPECT_EQ(plan.passes[1].kind, dyeline::PassKind::Extract);
+    EXPECT_EQ(plan.passes[1].stop, 2);
+    EXPECT_EQ(plan.passes[1].image.stage_op, 2);  // reads through the warp
+    EXPECT_EQ(plan.passes.back().image.stage_op, 2);
+    // The warp only reads inside the frame.
+    const PixelRect s = dyeline::source_region(chain.pass, g);
+    EXPECT_EQ(s.x1, 0);
+    EXPECT_EQ(s.y1, 0);
+    EXPECT_EQ(s.x2, 200);
+    EXPECT_EQ(s.y2, 100);
+}
+
+TEST(LensDistortion, ZoomScalesAboutTheCenterAndBarrelEmptiesTheCorners) {
+    const int w = 81;
+    const int h = 61;
+    // A horizontal ramp: zooming in 2x about the center halves its slope.
+    std::vector<float> ramp(static_cast<std::size_t>(w) * h * 3);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            for (int k = 0; k < 3; ++k) {
+                ramp[(static_cast<std::size_t>(y) * w + x) * 3 + k] = static_cast<float>(x);
+            }
+        }
+    }
+    const std::vector<float> zoomed =
+        render(compile({tool("lens-distortion", {{"amount", 0.0}, {"zoom", 2.0}})}),
+               frame_geometry(w, h), ramp);
+    EXPECT_NEAR(at(zoomed, w, 40, 30, 1), 40.0f, 1e-4f);
+    EXPECT_NEAR(at(zoomed, w, 60, 30, 1), 50.0f, 1e-4f);
+    EXPECT_NEAR(at(zoomed, w, 0, 30, 0), 20.0f, 1e-4f);
+
+    // Barrel at full Amount reads past the frame at the corners, which come out black, while
+    // the center stays put.
+    const std::vector<float> barrel =
+        render(compile({tool("lens-distortion", {{"amount", 1.0}})}), frame_geometry(w, h), ramp);
+    EXPECT_NEAR(at(barrel, w, 40, 30, 1), 40.0f, 1e-4f);
+    EXPECT_EQ(at(barrel, w, 0, 0, 1), 0.0f);
+    EXPECT_EQ(at(barrel, w, w - 1, h - 1, 2), 0.0f);
+    // Along the middle row, pixels move outward less than they would without distortion:
+    // left of center reads further left.
+    EXPECT_LT(at(barrel, w, 20, 30, 1), 20.0f);
+    EXPECT_GT(at(barrel, w, 60, 30, 1), 60.0f);
+
+    // Pincushion does the opposite.
+    const std::vector<float> pincushion =
+        render(compile({tool("lens-distortion", {{"amount", -1.0}})}), frame_geometry(w, h), ramp);
+    EXPECT_GT(at(pincushion, w, 20, 30, 1), 20.0f);
+    EXPECT_LT(at(pincushion, w, 60, 30, 1), 60.0f);
+
+    // Half strength moves pixels half as far.
+    const std::vector<float> half = render(
+        compile({tool("lens-distortion", {{"amount", 0.0}, {"zoom", 2.0}}, 0.5)}), frame_geometry(w, h), ramp);
+    EXPECT_NEAR(at(half, w, 60, 30, 1), 55.0f, 1e-4f);
+    EXPECT_TRUE(compile({tool("lens-distortion", {{"amount", 0.0}})}).pass.count == 0);
+}
+
+TEST(ChromaticAberration, SplitsRedAndBlueAwayFromGreenTowardTheEdges) {
+    const int w = 101;
+    const int h = 41;
+    const int line = 90;  // a vertical white line right of center
+    // At most 1% of the frame's width, about a pixel here, at the corners.
+    const CompiledChain strong =
+        compile({tool("chromatic-aberration", {{"red", 1.0}, {"blue", -1.0}})});
+    const std::vector<float> src = column_frame(w, h, line, 1.0f);
+    const std::vector<float> out = render(strong, frame_geometry(w, h), src);
+    // Green stays exactly where it was.
+    EXPECT_EQ(brightest_column(out, w, 20, 1), line);
+    EXPECT_FLOAT_EQ(at(out, w, line, 20, 1), 1.0f);
+    // Red moves outward (right) and blue inward.
+    EXPECT_GT(at(out, w, line + 1, 20, 0), at(out, w, line - 1, 20, 0));
+    EXPECT_LT(at(out, w, line + 1, 20, 2), at(out, w, line - 1, 20, 2));
+    // A line through the center doesn't split.
+    const std::vector<float> centered =
+        render(strong, frame_geometry(w, h), column_frame(w, h, 50, 1.0f));
+    EXPECT_EQ(brightest_column(centered, w, 20, 0), 50);
+    EXPECT_EQ(brightest_column(centered, w, 20, 2), 50);
+
+    // Fringe blurs red and blue but not green.
+    const CompiledChain fringe =
+        compile({tool("chromatic-aberration", {{"red", 0.0}, {"blue", 0.0}, {"fringe", 0.5}})});
+    const std::vector<float> soft =
+        render(fringe, frame_geometry(w, h), column_frame(w, h, 50, 1.0f));
+    EXPECT_FLOAT_EQ(at(soft, w, 50, 20, 1), 1.0f);
+    EXPECT_FLOAT_EQ(at(soft, w, 51, 20, 1), 0.0f);
+    EXPECT_LT(at(soft, w, 50, 20, 0), 0.9f);
+    EXPECT_GT(at(soft, w, 50, 20, 0), 0.1f);
+    EXPECT_NEAR(at(soft, w, 50, 20, 0), at(soft, w, 50, 20, 2), 1e-6f);
+    EXPECT_TRUE(
+        compile({tool("chromatic-aberration", {{"red", 0.0}, {"blue", 0.0}})}).pass.count == 0);
+}
+
+TEST(Warp, AFoldingPincushionStillGetsTheSourceItReads) {
+    // Strong pincushion with Edges, off center, folds back on itself toward the far corners.
+    const CompiledChain chain = compile({tool(
+        "lens-distortion", {{"amount", -1.0}, {"edges", -1.0}, {"center-x", -0.8}, {"center-y", 0.6}})});
+    const int w = 90;
+    const int h = 70;
+    const std::vector<float> src = test_frame(w, h);
+    for (const PixelRect& window : {PixelRect{80, 0, 90, 8}, PixelRect{60, 20, 70, 30},
+                                    PixelRect{0, 60, 10, 70}}) {
+        RenderGeometry g = frame_geometry(w, h);
+        g.window = window;
+        g.dst_bounds = window;
+        g.dst_row_floats = window.width() * 3;
+        expect_source_region_is_enough(chain, g, src, w);
+    }
+}
+
+TEST(Warp, KeepsAlphaAndPremultiplication) {
+    // A premultiplied RGBA frame, half covered: the warp moves the coverage with the color,
+    // and solid pixels stay solid.
+    const int w = 41;
+    const int h = 31;
+    std::vector<float> src(static_cast<std::size_t>(w) * h * 4);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const float a = x < 20 ? 1.0f : 0.0f;
+            float* p = &src[(static_cast<std::size_t>(y) * w + x) * 4];
+            p[0] = 0.5f * a;
+            p[1] = 0.25f * a;
+            p[2] = 0.125f * a;
+            p[3] = a;
+        }
+    }
+    RenderGeometry g = frame_geometry(w, h);
+    g.channels = 4;
+    g.premultiplied = true;
+    g.src_row_floats = w * 4;
+    g.dst_row_floats = w * 4;
+    const CompiledChain chain =
+        compile({tool("lens-distortion", {{"amount", 0.0}, {"zoom", 2.0}}), tool("exposure", {{"stops", 1.0}})});
+    std::vector<float> dst(src.size(), -1.0f);
+    const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, g);
+    dyeline::run_plan_cpu(src.data(), dst.data(), chain.table.data(), plan);
+    const auto px = [&](int x, int y, int k) { return dst[(static_cast<std::size_t>(y) * w + x) * 4 + k]; };
+    // Zoomed 2x about x = 20.5, the edge between x = 19 and 20 stays near the center, and
+    // pixels well left of it are solid, doubled by the exposure.
+    EXPECT_FLOAT_EQ(px(5, 15, 3), 1.0f);
+    EXPECT_FLOAT_EQ(px(5, 15, 0), 1.0f);
+    EXPECT_FLOAT_EQ(px(5, 15, 2), 0.25f);
+    EXPECT_FLOAT_EQ(px(35, 15, 3), 0.0f);
+    EXPECT_FLOAT_EQ(px(35, 15, 0), 0.0f);
+    // Pixel 19 reads halfway between source pixels 19 and 20, so it is half covered, and its
+    // color is still premultiplied: straight, it is doubled like the rest.
+    const float edge_alpha = px(19, 15, 3);
+    EXPECT_NEAR(edge_alpha, 0.5f, 1e-5f);
+    EXPECT_NEAR(px(19, 15, 0) / edge_alpha, 1.0f, 1e-5f);
+}
+
+TEST(Warp, TilesAndCroppedSourcesMatchTheWholeFrame) {
+    // Spatial tools before and after two warps, one off center.
+    const CompiledChain chain =
+        compile({tool("diffusion", {{"amount", 0.6}, {"size", 3.0}}),
+                 tool("lens-distortion", {{"amount", 0.6}, {"edges", -0.5}, {"zoom", 1.2}, {"center-x", 0.3}}),
+                 tool("halation", {{"amount", 0.8}, {"size", 2.0}}),
+                 tool("chromatic-aberration", {{"red", 1.0}, {"blue", -0.5}, {"fringe", 0.3}}, 0.8),
+                 tool("lens-vignette", {{"amount", -1.0}})});
+    const int w = 90;
+    const int h = 70;
+    const std::vector<float> src = test_frame(w, h);
+    const RenderGeometry whole = frame_geometry(w, h);
+    const std::vector<float> expected = render(chain, whole, src);
+
+    std::vector<float> tiled(expected.size(), -1.0f);
+    for (const PixelRect& tile : {PixelRect{0, 0, 37, 29}, PixelRect{37, 0, 90, 29},
+                                  PixelRect{0, 29, 37, 70}, PixelRect{37, 29, 90, 70}}) {
+        RenderGeometry g = whole;
+        g.window = tile;
+        const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, g);
+        dyeline::run_plan_cpu(src.data(), tiled.data(), chain.table.data(), plan, 2);
+    }
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        ASSERT_NEAR(tiled[i], expected[i], 1e-5f * std::max(1.0f, std::fabs(expected[i])))
+            << "pixel " << i / 3;
+    }
+
+    for (const PixelRect& window : {PixelRect{0, 0, 12, 9}, PixelRect{40, 30, 52, 41},
+                                    PixelRect{70, 55, 90, 70}}) {
+        RenderGeometry g = whole;
+        g.window = window;
+        g.dst_bounds = window;
+        g.dst_row_floats = window.width() * 3;
+        expect_source_region_is_enough(chain, g, src, w);
+    }
 }
 
 }  // namespace

@@ -97,7 +97,8 @@ frame without the look, for comparing.
 the sRGB curve and video or log spaces as they are, which is right almost always.
 
 Tools that work on part of the frame (Gradient Tint, Grad Exposure, Spot Exposure, Spot Fill,
-Lens Vignette) draw **handles** over the preview while selected. Drag the dot in the middle to
+Lens Vignette) and the lens tools with a center (Lens Distortion, Chromatic Aberration) draw
+**handles** over the preview while selected. Drag the dot in the middle to
 move the tool's center. A spot also has a circle, with a dot on it to drag its size; a gradient
 has an arrow pointing to the side it changes, with a dot at its tip to turn it. Each drag is
 one undo step, and the sliders follow along.
@@ -134,7 +135,9 @@ input to the camera's log space first: a LUT from a linear input cuts off everyt
 than white.
 
 A LUT can only map one color to another, so tools that depend on where a pixel is or on its
-neighbors are left out: the gradient and spot tools, **Lens Vignette**, **Grain**, **Diffusion Filter**, **Local Contrast**, **Telecine Net** and **Halation**.
+neighbors are left out: the gradient and spot tools, **Lens Vignette**, **Lens Distortion**,
+**Chromatic Aberration**, **Grain**, **Diffusion Filter**, **Local Contrast**, **Telecine Net**
+and **Halation**.
 The export dialog lists what will be left out, and the file's header names it.
 
 ## Look files

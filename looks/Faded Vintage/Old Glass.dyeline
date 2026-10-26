@@ -1,0 +1,75 @@
+{
+  "formatVersion": 1,
+  "meta": {
+    "name": "Old Glass",
+    "tags": [
+      "vintage",
+      "lens",
+      "soft"
+    ],
+    "author": "Dyeline contributors",
+    "license": "CC-BY-4.0"
+  },
+  "chain": [
+    {
+      "tool": "diffusion",
+      "params": {
+        "amount": 0.35,
+        "size": 1.5,
+        "highlights": 0.6
+      }
+    },
+    {
+      "tool": "contrast",
+      "params": {
+        "contrast": 0.9
+      }
+    },
+    {
+      "tool": "three-way",
+      "params": {
+        "shadows-hue": 200,
+        "shadows-amount": 0.15,
+        "highlights-hue": 50,
+        "highlights-amount": 0.3,
+        "pivot": 0.18
+      }
+    },
+    {
+      "tool": "hue-saturation",
+      "params": {
+        "saturation": 0.85
+      }
+    },
+    {
+      "tool": "lens-distortion",
+      "params": {
+        "amount": 0.25,
+        "zoom": 1.08
+      }
+    },
+    {
+      "tool": "chromatic-aberration",
+      "params": {
+        "red": 0.2,
+        "blue": -0.15,
+        "fringe": 0.05
+      }
+    },
+    {
+      "tool": "lens-vignette",
+      "params": {
+        "amount": -1.2,
+        "size": 0.4
+      }
+    },
+    {
+      "tool": "grain",
+      "params": {
+        "amount": 0.3,
+        "size": 1.8,
+        "color": 0.3
+      }
+    }
+  ]
+}

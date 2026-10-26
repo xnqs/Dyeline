@@ -3,7 +3,7 @@
 // Plans how a compiled look renders one window, as a list of passes every backend runs the
 // same way, and runs a plan on the CPU. Looks with only per-pixel tools render in one pass;
 // each spatial tool (Diffusion, Halation) adds an extract pass and six box-blur passes ahead
-// of it (see chain_kernel.h).
+// of it, and each warp tool (Lens Distortion) a stage pass (see chain_kernel.h).
 
 #include <cstddef>
 #include <vector>
@@ -46,7 +46,7 @@ enum class PassKind { Extract, Blur, Final };
 struct RenderPass {
     PassKind kind = PassKind::Final;
     dl_image_args image{};  // Extract and Final: the region and buffers
-    int stop = 0;           // Extract: the spatial op whose input this pass extracts
+    int stop = 0;           // Extract: the spatial or warp op whose input this pass extracts
     dl_box_args box{};      // Blur
 };
 
@@ -54,18 +54,13 @@ struct RenderPlan {
     // The compiled pass, with each spatial op pointed at its blurred image.
     dl_chain chain{};
     std::vector<RenderPass> passes;
-    // Floats of scratch memory the passes share (none for a look without spatial tools).
+    // Floats of scratch memory the passes share (none for a look of per-pixel tools only).
     std::size_t work_floats = 0;
 };
 
-// How many pixels beyond the one it renders a chain reaches, on each side. The host widens
-// the source region it asks for by this much.
-struct PixelMargin {
-    int x = 0;
-    int y = 0;
-};
-
-PixelMargin spatial_margin(const dl_chain& chain, const RenderGeometry& geometry);
+// The source pixels rendering `geometry.window` reads, which the host is asked for. Spatial
+// tools widen it; warp tools move it, and never reach outside the frame.
+PixelRect source_region(const dl_chain& chain, const RenderGeometry& geometry);
 
 RenderPlan plan_render(const dl_chain& chain, const RenderGeometry& geometry);
 

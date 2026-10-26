@@ -25,10 +25,11 @@ struct CompiledChain {
     // without its tools.
     bool color_round_trips = true;
 
-    // True when the chain has a tool that reads neighboring pixels.
+    // True when the chain has a tool that reads pixels other than the one it renders:
+    // neighbors (a blur) or pixels elsewhere (a warp).
     bool has_spatial() const {
         for (int i = 0; i < pass.count; ++i) {
-            if (dl_is_spatial(pass.ops[i].tool)) {
+            if (dl_is_spatial(pass.ops[i].tool) || dl_is_warp(pass.ops[i].tool)) {
                 return true;
             }
         }
