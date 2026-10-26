@@ -399,6 +399,37 @@ resolution. Strength scales all three.
 | `center-x` | 0 | -1 to 1 | The lens's center, as a fraction of half the frame's width. |
 | `center-y` | 0 | -1 to 1 | The lens's center, as a fraction of half the frame's height (up is positive). |
 
+## Edge Softness (`edge-softness`)
+
+Softens the image toward the frame's edges, the way a simple or vintage lens loses sharpness
+away from its center. Inside Size the image stays sharp; past it the blur grows over Softness
+to the full Blur. The blur grows smoothly, rather than a blurred copy fading in over a sharp
+one. Distances are measured so the frame's corners are at 1; Blur is a percentage of the
+frame's width.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `blur` | 0.8 | 0 to 5 | The full blur, in percent of the frame's width. |
+| `center-x` | 0 | -1 to 1 | Moves the sharp center, as a fraction of half the frame's width. |
+| `center-y` | 0 | -1 to 1 | Moves the sharp center, as a fraction of half the frame's height (up is positive). |
+| `size` | 0.5 | 0 to 2 | Distance from the center where softening begins (1 is a corner). |
+| `softness` | 0.6 | 0.01 to 2 | How far past Size the blur reaches its full amount. |
+
+## Swing-Tilt (`swing-tilt`)
+
+A tilted lens: a band through the center stays sharp and the image blurs away from it on both
+sides, which makes scenes look like miniatures. Angle turns the band; at 0 it runs across the
+frame. Focus is half the band's width and Softness how far past it the blur reaches full.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `blur` | 1.5 | 0 to 5 | The full blur, in percent of the frame's width. |
+| `center-x` | 0 | -1 to 1 | A point on the sharp band, as a fraction of half the frame's width. |
+| `center-y` | 0 | -1 to 1 | A point on the sharp band, as a fraction of half the frame's height. |
+| `angle` | 0 | -180 to 180 | Degrees clockwise from up of the direction the blur grows in. |
+| `focus` | 0.15 | 0 to 1 | Half the sharp band's width (1 is the half diagonal). |
+| `softness` | 0.4 | 0.01 to 2 | How far past Focus the blur reaches its full amount. |
+
 ## Grain (`grain`)
 
 Film-like grain. Each pixel moves by a small random amount in stops, strongest in the midtones

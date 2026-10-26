@@ -28,9 +28,34 @@ struct Radius {
     int y = 0;
 };
 
-Radius blur_radius(const dl_op& op, const RenderGeometry& g) {
+// A spatial op's blur, as box radii. Most ops blur once, by `first`. Ops with two levels
+// (dl_blur_levels) blur by a third of their size first, keep that image, and blur it again by
+// `second`, which together make the full size: Gaussian variances add.
+struct Blur {
+    Radius first;
+    Radius second;
+    bool two_levels = false;
+
+    // How far the blurs reach, in pixels, on each side.
+    Radius reach() const {
+        return {kBoxPasses * (first.x + second.x), kBoxPasses * (first.y + second.y)};
+    }
+};
+
+Blur op_blur(const dl_op& op, const RenderGeometry& g) {
     const double sigma = static_cast<double>(op.p[DL_OP_BLUR_SIZE]) * (g.frame_right - g.frame_left);
-    return {box_radius(sigma / g.canonical_x), box_radius(sigma / g.canonical_y)};
+    const auto radius = [&](double s) {
+        return Radius{box_radius(s / g.canonical_x), box_radius(s / g.canonical_y)};
+    };
+    Blur blur;
+    if (dl_blur_levels(op.tool) == 2) {
+        blur.two_levels = true;
+        blur.first = radius(sigma / 3.0);
+        blur.second = radius(sigma * std::sqrt(8.0) / 3.0);
+    } else {
+        blur.first = radius(sigma);
+    }
+    return blur;
 }
 
 PixelRect grow(PixelRect r, int x, int y) {
@@ -208,6 +233,7 @@ PixelRect warp_region(const dl_op& op, const PixelRect& region, const RenderGeom
 // its blur's reach, and each warp's input image whatever its later passes read through it.
 struct Regions {
     std::vector<PixelRect> blurred;  // by op index
+    std::vector<PixelRect> fine;     // two-level ops: the first blur's image
     std::vector<PixelRect> extract;
     std::vector<PixelRect> stage;
     PixelRect source;                // what the passes read of the source
@@ -217,15 +243,17 @@ Regions plan_regions(const dl_chain& chain, const RenderGeometry& g) {
     Regions regions;
     const std::size_t n = static_cast<std::size_t>(std::max(chain.count, 0));
     regions.blurred.resize(n);
+    regions.fine.resize(n);
     regions.extract.resize(n);
     regions.stage.resize(n);
     PixelRect needed = g.window;
     for (int i = chain.count; i-- > 0;) {
         const dl_op& op = chain.ops[i];
         if (dl_is_spatial(op.tool)) {
-            const Radius r = blur_radius(op, g);
+            const Blur blur = op_blur(op, g);
             regions.blurred[i] = needed;
-            needed = grow(needed, kBoxPasses * r.x, kBoxPasses * r.y);
+            regions.fine[i] = grow(needed, kBoxPasses * blur.second.x, kBoxPasses * blur.second.y);
+            needed = grow(needed, blur.reach().x, blur.reach().y);
             regions.extract[i] = needed;
         } else if (dl_is_warp(op.tool) && needed.width() > 0 && needed.height() > 0) {
             needed = warp_region(op, needed, g);
@@ -269,6 +297,34 @@ PixelRect source_region(const dl_chain& chain, const RenderGeometry& g) {
     return plan_regions(chain, g).source;
 }
 
+namespace {
+
+// Blurs the RGB image at `from`, `width` x `height` pixels, into `target`: three horizontal
+// box passes, each narrowing the image by 2r, then three vertical ones, ping-ponging between
+// scratch images `a` and `b` (either may be `from`).
+void add_blur(RenderPlan& plan, std::size_t from, int width, int height, Radius radius,
+              std::size_t a, std::size_t b, std::size_t target) {
+    std::size_t to = from == a ? b : a;
+    std::size_t other = from == a ? a : b;
+    for (int k = 0; k < kBoxPasses; ++k) {
+        plan.passes.push_back(blur_pass(true, from, width, to, width - 2 * radius.x, height,
+                                        width - 2 * radius.x, radius.x));
+        width -= 2 * radius.x;
+        from = to;
+        std::swap(to, other);
+    }
+    for (int k = 0; k < kBoxPasses; ++k) {
+        const std::size_t out = k == kBoxPasses - 1 ? target : to;
+        plan.passes.push_back(
+            blur_pass(false, from, width, out, width, width, height - 2 * radius.y, radius.y));
+        height -= 2 * radius.y;
+        from = to;
+        std::swap(to, other);
+    }
+}
+
+}  // namespace
+
 RenderPlan plan_render(const dl_chain& chain, const RenderGeometry& g) {
     RenderPlan plan;
     plan.chain = chain;
@@ -295,6 +351,14 @@ RenderPlan plan_render(const dl_chain& chain, const RenderGeometry& g) {
             op.ip[2] = r.y1;
             op.ip[3] = r.width();
             next += rgb_floats(r);
+            if (op_blur(op, g).two_levels) {
+                const PixelRect& f = regions.fine[i];
+                op.ip[4] = static_cast<int>(next);
+                op.ip[5] = f.x1;
+                op.ip[6] = f.y1;
+                op.ip[7] = f.width();
+                next += rgb_floats(f);
+            }
         } else if (dl_is_warp(op.tool)) {
             stage_offset[static_cast<std::size_t>(i)] = next;
             next += rgb_floats(regions.stage[i]) / 3 * 4;
@@ -341,27 +405,17 @@ RenderPlan plan_render(const dl_chain& chain, const RenderGeometry& g) {
         ex.stop = i;
         plan.passes.push_back(ex);
 
-        // Three horizontal passes, A -> B -> A -> B, each narrowing the image by 2r; then
-        // three vertical ones, B -> A -> B -> the op's blurred image.
-        const Radius radius = blur_radius(chain.ops[i], g);
-        const int rows = extract.height();
-        int width = extract.width();
-        std::size_t from = a;
-        std::size_t to = b;
-        for (int k = 0; k < kBoxPasses; ++k) {
-            plan.passes.push_back(blur_pass(true, from, width, to, width - 2 * radius.x, rows,
-                                            width - 2 * radius.x, radius.x));
-            width -= 2 * radius.x;
-            std::swap(from, to);
-        }
-        int height = rows;
-        for (int k = 0; k < kBoxPasses; ++k) {
-            const std::size_t target =
-                k == kBoxPasses - 1 ? static_cast<std::size_t>(plan.chain.ops[i].ip[0]) : to;
-            plan.passes.push_back(
-                blur_pass(false, from, width, target, width, width, height - 2 * radius.y, radius.y));
-            height -= 2 * radius.y;
-            std::swap(from, to);
+        const dl_op& op = plan.chain.ops[i];
+        const Blur blur = op_blur(op, g);
+        if (blur.two_levels) {
+            add_blur(plan, a, extract.width(), extract.height(), blur.first, a, b,
+                     static_cast<std::size_t>(op.ip[4]));
+            const PixelRect& fine = regions.fine[i];
+            add_blur(plan, static_cast<std::size_t>(op.ip[4]), fine.width(), fine.height(),
+                     blur.second, a, b, static_cast<std::size_t>(op.ip[0]));
+        } else {
+            add_blur(plan, a, extract.width(), extract.height(), blur.first, a, b,
+                     static_cast<std::size_t>(op.ip[0]));
         }
     }
 

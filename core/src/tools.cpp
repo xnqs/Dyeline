@@ -679,6 +679,34 @@ bool diffusion_is_identity(const ParamValues& v) {
     return v[0] == 0.0;
 }
 
+// Edge Softness: Blur (percent of the frame's width), center x, y, size and softness.
+void encode_edge_softness(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_EDGE_SOFTNESS;
+    op.p[0] = static_cast<float>(v[3]);
+    op.p[1] = static_cast<float>(v[4]);
+    op.p[2] = static_cast<float>(v[1]);
+    op.p[3] = static_cast<float>(v[2]);
+    set_blur_size(v[0], op);
+}
+
+// Swing-Tilt: Blur, center x, y, angle (the band's normal, clockwise from up), focus (half the
+// sharp band's width) and softness.
+void encode_swing_tilt(const ParamValues& v, dl_op& op) {
+    op.tool = DL_OP_SWING_TILT;
+    const double angle = v[3] * kPi / 180.0;
+    op.p[0] = static_cast<float>(v[4]);
+    op.p[1] = static_cast<float>(v[5]);
+    op.p[2] = static_cast<float>(v[1]);
+    op.p[3] = static_cast<float>(v[2]);
+    op.p[4] = static_cast<float>(std::sin(angle));
+    op.p[5] = static_cast<float>(std::cos(angle));
+    set_blur_size(v[0], op);
+}
+
+bool blur_is_zero(const ParamValues& v) {
+    return v[0] == 0.0;
+}
+
 // Local Contrast: see local_contrast.h. Size is the blur's, in percent of the frame's width.
 void encode_local_contrast(const ParamValues& v, dl_op& op) {
     op.tool = DL_OP_LOCAL_CONTRAST;
@@ -875,6 +903,21 @@ std::vector<ToolSpec> make_tools() {
                       {"center-y", "Center Y", 0.0, -1.0, 1.0}},
                      nullptr, encode_chromatic_aberration, chromatic_aberration_is_identity,
                      nullptr, nullptr, false, {{HandleKind::Point, "center-x", "center-y"}}});
+    tools.push_back({"edge-softness", "Edge Softness", ToolCategory::Lens, 1,
+                     {{"blur", "Blur", 0.8, 0.0, 5.0},
+                      center_x(), center_y(),
+                      {"size", "Size", 0.5, 0.0, 2.0},
+                      {"softness", "Softness", 0.6, 0.01, 2.0}},
+                     nullptr, encode_edge_softness, blur_is_zero, nullptr, nullptr, false,
+                     kSpotHandles});
+    tools.push_back({"swing-tilt", "Swing-Tilt", ToolCategory::Lens, 1,
+                     {{"blur", "Blur", 1.5, 0.0, 5.0},
+                      center_x(), center_y(),
+                      {"angle", "Angle", 0.0, -180.0, 180.0},
+                      {"focus", "Focus", 0.15, 0.0, 1.0},
+                      {"softness", "Softness", 0.4, 0.01, 2.0}},
+                     nullptr, encode_swing_tilt, blur_is_zero, nullptr, nullptr, false,
+                     {{HandleKind::Point, "center-x", "center-y"}, {HandleKind::Angle, "angle"}}});
     tools.push_back({"grain", "Grain", ToolCategory::Camera, 1,
                      {{"amount", "Amount", 0.3, 0.0, 1.0},
                       {"size", "Size", 1.5, 0.5, 8.0},

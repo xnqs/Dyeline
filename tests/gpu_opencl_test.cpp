@@ -175,7 +175,7 @@ TEST(OpenCLBackend, OwnDeviceMatchesCpuReferenceThroughWarps) {
     const std::vector<float> src = dyeline::test::make_frame(width, height);
     const dyeline::RenderGeometry geometry = dyeline::test::window_geometry(width, height);
     const dyeline::CompiledChain chain = dyeline::test::warp_chain();
-    ASSERT_EQ(chain.pass.count, 6);
+    ASSERT_EQ(chain.pass.count, 8);
     const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, geometry);
     const std::vector<float> expected = dyeline::test::cpu_reference(src, plan, chain);
     std::vector<float> result = expected;
