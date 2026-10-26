@@ -535,10 +535,12 @@ DL_DEVICE void dl_extract_at(DL_GLOBAL const float* src, DL_GLOBAL float* work, 
     const int wi = a.work_offset + (y * a.width + x) * (warp ? 4 : 3);
     struct dl_place at;
     int unpremultiplied = 0;
+    // Read the source first: it sets `at`, which dl_pass_input takes by value, and compilers
+    // may evaluate a call's arguments in any order.
+    const dl_float4 source =
+        dl_apply_transform(dl_read_source(src, x, y, a, &at, &unpremultiplied), &chain->input);
     int first = 0;
-    dl_float4 c = dl_pass_input(
-        dl_apply_transform(dl_read_source(src, x, y, a, &at, &unpremultiplied), &chain->input),
-        work, a, chain, at, &first);
+    dl_float4 c = dl_pass_input(source, work, a, chain, at, &first);
     if (a.channels == 1) {
         // Alpha only: no color to work on, but a warp still moves the alpha.
         const float alpha = c.w;
