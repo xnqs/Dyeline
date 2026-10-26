@@ -94,7 +94,9 @@ def write_frame(path, rgba):
     """A Dyeline frame file (core/include/dyeline/frame_file.h): bottom row first."""
     with open(path, "wb") as f:
         f.write(b"DLFRAME1")
-        f.write(struct.pack("<6i", WIDTH, HEIGHT, 0, 0, 0, 1))
+        # Premultiplied, as Natron reads EXR: where a warp leaves no coverage, the glow a
+        # later tool adds is then multiplied away by the zero alpha.
+        f.write(struct.pack("<6i", WIDTH, HEIGHT, 1, 0, 0, 1))
         f.write(struct.pack("<6f", 1.0, 1.0, 0.0, 0.0, float(WIDTH), float(HEIGHT)))
         f.write(np.ascontiguousarray(rgba[::-1], dtype="<f4").tobytes())
 
