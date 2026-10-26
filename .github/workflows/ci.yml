@@ -89,6 +89,12 @@ jobs:
           renderer=$(find "$RUNNER_TEMP/natron" -name NatronRenderer \( -type f -o -type l \) |
                      awk '{ print length, $0 }' | sort -n | head -1 | cut -d' ' -f2-)
           echo "NatronRenderer: $renderer"
+          # The portable build bundles its own libraries but loads OpenGL and X11 from the system.
+          sudo apt-get install -y --no-install-recommends libglu1-mesa libgl1 libegl1 libopengl0 \
+            libfontconfig1 libxrender1 libxext6 libxi6 libsm6 libice6 libxkbcommon0 libxcb1
+          missing=$(find "$(dirname "$renderer")" -maxdepth 1 -type f -perm -u+x -exec ldd {} \; 2>/dev/null |
+                    grep 'not found' | sort -u || true)
+          if [ -n "$missing" ]; then echo "Missing libraries:"; echo "$missing"; fi
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet numpy OpenEXR
           "$RUNNER_TEMP/venv/bin/python" tests/hosts/natron/run.py --natron "$renderer" --plugin-dir build \
