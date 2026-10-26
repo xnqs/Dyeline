@@ -1,6 +1,7 @@
 # Lens tools: behavior spec
 
-Lens Distortion, Chromatic Aberration, Edge Softness and Swing-Tilt, written from optics references and the tools' own
+Lens Distortion, Chromatic Aberration, Edge Softness, Swing-Tilt, the Diffusion Filter's
+styles and Streaks, written from optics references and the tools' own
 descriptions in [docs/tools.md](../tools.md), and nothing else (see
 [CLEANROOM.md](../../CLEANROOM.md)).
 
@@ -37,6 +38,14 @@ descriptions in [docs/tools.md](../tools.md), and nothing else (see
   pixel, a light Gaussian blur (a third of the size) and the full one, made by blurring the
   light blur again (Gaussian variances add). The weight runs from sharp to light to full, so
   partial blur looks like a smaller blur rather than a soft glow over a sharp image.
+- **Mist filters.** A mist filter scatters a share of the light reaching the lens, so
+  highlights bloom and shadows lift; "black" variants add dark particles and are described as
+  keeping the blacks while still blooming highlights. The Diffusion Filter's Pro-Mist style
+  scatters at least half of every tone (the shadow veil); Black Pro-Mist scales the scattered
+  share by how far a tone is above the midtones, so shadows scatter nothing.
+- **Anamorphic streaks.** Anamorphic lenses flare bright point lights into long horizontal
+  lines. Streaks takes the light above a threshold, as Halation does, blurs it along rows only
+  and adds it, tinted (blue by default, the color usually described).
 
 ## Sources
 
@@ -50,3 +59,6 @@ descriptions in [docs/tools.md](../tools.md), and nothing else (see
 - Wikipedia, "Scheimpflug principle", https://en.wikipedia.org/wiki/Scheimpflug_principle,
   and "Tilt–shift photography", https://en.wikipedia.org/wiki/Tilt%E2%80%93shift_photography,
   for tilted planes of focus and the miniature effect.
+- Tiffen's public product descriptions of its Pro-Mist and Black Pro-Mist filters,
+  https://tiffen.com/, and Wikipedia, "Anamorphic format",
+  https://en.wikipedia.org/wiki/Anamorphic_format, for horizontal lens flares.

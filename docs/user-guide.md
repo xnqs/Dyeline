@@ -137,7 +137,7 @@ than white.
 A LUT can only map one color to another, so tools that depend on where a pixel is or on its
 neighbors are left out: the gradient and spot tools, **Lens Vignette**, **Lens Distortion**,
 **Chromatic Aberration**, **Edge Softness**, **Swing-Tilt**, **Grain**, **Diffusion Filter**,
-**Local Contrast**, **Telecine Net** and **Halation**.
+**Streaks**, **Local Contrast**, **Telecine Net** and **Halation**.
 The export dialog lists what will be left out, and the file's header names it.
 
 ## Look files

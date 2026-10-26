@@ -72,6 +72,7 @@
 #define DL_OP_CHROMATIC_ABERRATION 22
 #define DL_OP_EDGE_SOFTNESS 23
 #define DL_OP_SWING_TILT 24
+#define DL_OP_STREAKS 25
 
 // Spatial ops keep their blur size in their last parameter, for the host's render plan.
 #define DL_OP_BLUR_SIZE (DL_OP_PARAMS - 1)
@@ -157,7 +158,12 @@ struct dl_box_args {
 
 DL_DEVICE int dl_is_spatial(int tool) {
     return tool == DL_OP_DIFFUSION || tool == DL_OP_HALATION || tool == DL_OP_LOCAL_CONTRAST ||
-           tool == DL_OP_EDGE_SOFTNESS || tool == DL_OP_SWING_TILT;
+           tool == DL_OP_EDGE_SOFTNESS || tool == DL_OP_SWING_TILT || tool == DL_OP_STREAKS;
+}
+
+// True for spatial ops that blur along rows only (Streaks).
+DL_DEVICE int dl_blur_is_horizontal(int tool) {
+    return tool == DL_OP_STREAKS;
 }
 
 // How many blurred images a spatial op reads: 2 for the tools whose blur varies across the
@@ -254,6 +260,7 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
         case DL_OP_DIFFUSION:
             return dl_tool_diffusion_combine(c, op->p, dl_blurred_at(op, work, at));
         case DL_OP_HALATION:
+        case DL_OP_STREAKS:
             return dl_tool_halation_combine(c, op->p, dl_blurred_at(op, work, at));
         case DL_OP_EDGE_SOFTNESS:
             return dl_lens_blur_mix(c, dl_fine_blurred_at(op, work, at),
@@ -273,6 +280,7 @@ DL_DEVICE dl_float4 dl_extract_op(dl_float4 c, DL_CONSTANT const struct dl_op* o
         case DL_OP_DIFFUSION:
             return dl_tool_diffusion_extract(c, op->p);
         case DL_OP_HALATION:
+        case DL_OP_STREAKS:
             return dl_tool_halation_extract(c, op->p);
         case DL_OP_LOCAL_CONTRAST:
             return dl_tool_local_contrast_extract(c, op->p);
