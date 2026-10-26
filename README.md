@@ -7,7 +7,7 @@ workflow of Magic Bullet Looks.
 > Dyeline is not affiliated with, endorsed by or connected to Maxon or Red Giant. "Magic Bullet
 > Looks" is their trademark and is named here only to describe what Dyeline is an alternative to.
 
-**Status:** 0.5 beta, the end of Milestone 2 (see [CHANGELOG.md](CHANGELOG.md)). The plugin renders a look, a chain of
+**Status:** 0.6 beta, the end of Milestone 3 (see [CHANGELOG.md](CHANGELOG.md)). The plugin renders a look, a chain of
 tools, on the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS) when
 the host provides one, else on its own OpenCL or Metal device, else on the CPU. The tools so far are Exposure, Contrast, S Curve, Hue/Saturation, Black & White, Channel
 Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade (with HSL and Sat EQ), 4-Way Wheels,
