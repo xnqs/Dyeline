@@ -3,6 +3,7 @@ add_library(dyeline_core STATIC
     src/color.cpp
     src/cube.cpp
     src/cube_export.cpp
+    src/curves.cpp
     src/designer_link.cpp
     src/effectcraft.cpp
     src/film.cpp

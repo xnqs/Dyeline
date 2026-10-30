@@ -9,7 +9,7 @@ workflow of Magic Bullet Looks.
 
 **Status:** 0.6 beta, the end of Milestone 3 (see [CHANGELOG.md](CHANGELOG.md)). The plugin renders a look, a chain of
 tools, on the GPU through CUDA (Windows, Linux), OpenCL (Windows, Linux) or Metal (macOS) when
-the host provides one, else on its own OpenCL or Metal device, else on the CPU. The tools so far are Exposure, Contrast, S Curve, Hue/Saturation, Black & White, Channel
+the host provides one, else on its own OpenCL or Metal device, else on the CPU. The tools so far are Exposure, Contrast, S Curve, Curves, Hue/Saturation, Black & White, Channel
 Mixer, Shadows/Highlights, Highlight Shoulder, 3-Way Grade (with HSL and Sat EQ), 4-Way Wheels,
 Blockbuster, Duotone, LUT, Film Negative, Film Print, Bleach Bypass, 2-Strip, Gradient Tint,
 Grad Exposure, Spot Exposure, Fill Light, Spot Fill, Color Filter, Lens Vignette, Lens

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "dyeline/chain.h"
+#include "dyeline/curves.h"
 #include "dyeline/film.h"
 #include "dyeline/tools.h"
 #include "temp_file.h"
@@ -54,7 +55,7 @@ TEST(Tools, AllAreRegistered) {
                            "telecine-net", "gradient-tint", "grad-exposure", "spot-exposure",
                            "fill-light", "spot-fill", "four-way", "blockbuster", "color-filter",
                            "duotone", "local-contrast", "lens-distortion", "chromatic-aberration",
-                           "edge-softness", "swing-tilt", "streaks"}) {
+                           "edge-softness", "swing-tilt", "streaks", "curves"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }
@@ -104,6 +105,68 @@ TEST(SCurve, AddsMidtoneContrastAndNeverReverses) {
 TEST(SCurve, SkipsAtZeroAmount) {
     EXPECT_TRUE(skipped(tool("s-curve", {{"amount", 0.0}})));
     EXPECT_FALSE(skipped(tool("s-curve", nlohmann::json::object())));  // default is 0.5
+}
+
+// A curve through (0, 0), (1/2 + d, 1/2 + d + lift) and (1, 1): with the default Range of 6
+// stops, the point sits 12 d stops from grey and raises it by 12 lift stops.
+nlohmann::json bend(double d, double lift) {
+    return nlohmann::json::array({{0.0, 0.0}, {0.5 + d, 0.5 + d + lift}, {1.0, 1.0}});
+}
+
+TEST(Curves, SkipsStraightCurves) {
+    EXPECT_TRUE(skipped(tool("curves", nlohmann::json::object())));
+    EXPECT_TRUE(skipped(tool("curves", {{"red", nlohmann::json::array({{0.0, 0.0}, {1.0, 1.0}})}})));
+    EXPECT_FALSE(skipped(tool("curves", {{"blue", bend(0.0, 0.05)}})));
+}
+
+TEST(Curves, MovesValuesInStopsAroundGrey) {
+    // Grey sits at the middle of the graph; raising it by 1/12 is one stop.
+    const auto out = run(tool("curves", {{"master", bend(0.0, 1.0 / 12.0)}}), {0.18f, 0.18f, 0.18f, 1.0f});
+    EXPECT_NEAR(out[0], 0.36f, 1e-3f);
+    EXPECT_NEAR(out[1], 0.36f, 1e-3f);
+    EXPECT_FLOAT_EQ(out[3], 1.0f);
+    // A wider Range packs more stops into the same graph.
+    const auto wide = run(tool("curves", {{"master", bend(0.0, 1.0 / 12.0)}, {"range", 9.0}}),
+                          {0.18f, 0.18f, 0.18f, 1.0f});
+    EXPECT_NEAR(wide[0], 0.18f * std::exp2(1.5f), 2e-3f);
+}
+
+TEST(Curves, ChannelCurvesTouchOnlyTheirChannel) {
+    const auto out = run(tool("curves", {{"red", bend(0.0, -1.0 / 12.0)}}), {0.18f, 0.18f, 0.18f, 1.0f});
+    EXPECT_NEAR(out[0], 0.09f, 1e-3f);
+    EXPECT_FLOAT_EQ(out[1], 0.18f);
+    EXPECT_FLOAT_EQ(out[2], 0.18f);
+}
+
+TEST(Curves, MasterOnLuminanceKeepsTheColor) {
+    const std::vector<float> in = {0.4f, 0.15f, 0.05f, 1.0f};
+    const auto out = run(tool("curves", {{"master", bend(0.0, 1.0 / 12.0)}, {"master-on", 1}}), in);
+    EXPECT_NEAR(out[0] / out[1], in[0] / in[1], 1e-5f);
+    EXPECT_NEAR(out[2] / out[1], in[2] / in[1], 1e-5f);
+    EXPECT_GT(luma(out), luma(in));
+    // Each channel on its own: the channels move by different stops, so the color shifts.
+    const auto each = run(tool("curves", {{"master", bend(0.0, 1.0 / 12.0)}}), in);
+    EXPECT_GT(std::fabs(each[0] / each[1] - in[0] / in[1]), 1e-3f);
+}
+
+TEST(Curves, ContinuesPastTheGraphAndPassesNonPositiveValues) {
+    // Past the graph's top, each stop brighter comes out as many stops as the curve's slope
+    // there.
+    const ToolEntry lifted = tool("curves", {{"master", bend(-0.25, 0.05)}});
+    const double slope = dyeline::CurveSpline(dyeline::read_curve(bend(-0.25, 0.05))).slope_after();
+    const float bright = 0.18f * std::exp2(8.0f);
+    const auto out = run(lifted, {bright, 2.0f * bright, -0.1f, 1.0f});
+    EXPECT_NEAR(std::log2(out[1] / out[0]), slope, 1e-4);
+    EXPECT_FLOAT_EQ(out[2], -0.1f);
+    EXPECT_FLOAT_EQ(run(lifted, {0.0f, 0.0f, 0.0f, 1.0f})[0], 0.0f);
+    // Rising everywhere, from deep shadows to far past the graph.
+    float previous = 0.0f;
+    for (float stops = -14.0f; stops <= 14.0f; stops += 0.25f) {
+        const float v = 0.18f * std::exp2(stops);
+        const float y = run(lifted, {v, v, v, 1.0f})[0];
+        EXPECT_GT(y, previous) << "at " << stops << " stops";
+        previous = y;
+    }
 }
 
 TEST(HueSaturation, ZeroSaturationGivesGreyOfTheSameLuminance) {

@@ -44,6 +44,20 @@ TEST(DesignerApp, DrawsALookAndHandsItBackUnchanged) {
     EXPECT_EQ(trip.look, text);
 }
 
+TEST(DesignerApp, DrawsTheCurvesGraph) {
+    Look look;
+    look.meta.name = "Curves";
+    dyeline::ToolEntry curves;
+    curves.tool = "curves";
+    curves.params["master"] = nlohmann::json::parse("[[0, 0.05], [0.5, 0.55], [1, 0.95]]");
+    curves.params["blue"] = nlohmann::json::parse("[[0, 0], [0.4, 0.45], [1, 1]]");
+    look.chain.push_back(curves);
+    const std::string text = dyeline::write_look(look);
+    const auto trip = dyeline::designer::run(DYELINE_DESIGNER_PATH, text, {"--test-frames", "3"});
+    ASSERT_EQ(trip.outcome, Outcome::Applied) << trip.error;
+    EXPECT_EQ(trip.look, text);
+}
+
 TEST(DesignerApp, SavesTheLookFile) {
     const auto path = std::filesystem::temp_directory_path() / "dyeline_designer_app_test.dyeline";
     std::filesystem::remove(path);
