@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "dyeline/cube.h"
+#include "dyeline/curves.h"
 #include "dyeline/film.h"
 #include "dyeline/paths.h"
 
@@ -443,6 +444,43 @@ bool append_table(PrepareContext& context, const float* data, std::size_t floats
     return true;
 }
 
+// Curves: each of the four curves sampled into the table (see curves.h). When all four are
+// still the corner-to-corner diagonal, the tool is left out of the pass.
+constexpr const char* kToneCurveIds[4] = {"master", "red", "green", "blue"};
+
+bool prepare_curves(PrepareContext& context, dl_op& op, std::string& problem) {
+    Curve curves[4];
+    bool identity = true;
+    for (int k = 0; k < 4; ++k) {
+        const auto it = context.params.find(kToneCurveIds[k]);
+        curves[k] = it != context.params.end() ? read_curve(*it) : identity_curve();
+        identity = identity && is_identity_curve(curves[k]);
+    }
+    if (identity) {
+        return false;
+    }
+    const double range = context.values[0];
+    op.tool = DL_OP_CURVES;
+    op.p[0] = static_cast<float>(context.table.size());
+    op.p[1] = static_cast<float>(2.0 * range);
+    op.p[2] = static_cast<float>(1.0 / (2.0 * range));
+    op.p[3] = context.values[1] >= 0.5 ? 1.0f : 0.0f;
+    for (int k = 0; k < 3; ++k) {
+        op.p[4 + k] = static_cast<float>(kLumaWeights[k]);
+    }
+    std::vector<float> samples(static_cast<std::size_t>(DL_TONE_CURVE_SAMPLES) * 4);
+    for (int k = 0; k < 4; ++k) {
+        const CurveSpline spline(curves[k]);
+        for (int i = 0; i < DL_TONE_CURVE_SAMPLES; ++i) {
+            samples[static_cast<std::size_t>(k * DL_TONE_CURVE_SAMPLES + i)] =
+                static_cast<float>(spline(static_cast<double>(i) / (DL_TONE_CURVE_SAMPLES - 1)));
+        }
+        op.p[7 + 2 * k] = static_cast<float>(spline.slope_before());
+        op.p[8 + 2 * k] = static_cast<float>(spline.slope_after());
+    }
+    return append_table(context, samples.data(), samples.size(), problem);
+}
+
 bool prepare_film_negative(PrepareContext& context, dl_op& op, std::string& problem) {
     const film::NegativeStock& stock = film::negative_stock(static_cast<int>(std::lround(context.values[0])));
     op.tool = DL_OP_FILM_NEGATIVE;
@@ -762,6 +800,12 @@ std::vector<ToolSpec> make_tools() {
                       {"pivot", "Pivot", 0.18, 0.001, 10.0},
                       {"range", "Range", 5.0, 1.0, 12.0}},
                      nullptr, encode_s_curve, s_curve_is_identity, nullptr});
+    tools.push_back({"curves", "Curves", ToolCategory::Matte, 1,
+                     {{"range", "Range", 6.0, 2.0, 10.0},
+                      {"master-on", "Master On", 0.0, 0.0, 1.0, ParamKind::Choice,
+                       {"Each Channel", "Luminance"}}},
+                     nullptr, encode_unused, never_identity, prepare_curves});
+    tools.back().curves = {{"master", "Master"}, {"red", "Red"}, {"green", "Green"}, {"blue", "Blue"}};
     tools.push_back({"hue-saturation", "Hue/Saturation", ToolCategory::Matte, 1,
                      {{"hue", "Hue", 0.0, -180.0, 180.0},
                       {"saturation", "Saturation", 1.0, 0.0, 4.0}},

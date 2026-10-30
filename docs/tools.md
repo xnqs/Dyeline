@@ -33,6 +33,38 @@ ends without ever reversing, so no detail is crushed to a flat line.
 | `pivot` | 0.18 | 0.001 to 10 | The scene-linear value at the curve's center. |
 | `range` | 5 | 1 to 12 | Stops either side of the pivot where the curve meets the original. |
 
+## Curves (`curves`)
+
+A master curve and one each for red, green and blue, drawn through points. The graph works in
+stops: middle grey (0.18) is its center, and its edges are `range` stops darker and brighter,
+on both axes. So raising a point by a twelfth of the graph, with the default Range of 6, adds
+one stop there.
+
+Between its points a curve is a smooth monotone cubic: it goes through every point and never
+bulges past two neighbors, so a curve whose points only rise only rises. Past its first and
+last points it carries on in a straight line at its end slope, which never falls: values
+beyond the graph keep their detail at that slope, and lifted blacks hold level rather than
+reversing. Values at or below zero pass through.
+
+The master curve runs first, then each channel's own curve. **Master On** picks how: *Each
+Channel* runs it on red, green and blue separately, so contrast also changes saturation, as
+it does on film; *Luminance* runs it on the pixel's luminance and scales the three channels
+together, so hue and saturation stay.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `master`, `red`, `green`, `blue` | the diagonal | 2 to 16 points | Each curve's points, as `[x, y]` pairs from 0 to 1. A missing curve is the diagonal, which changes nothing. |
+| `range` | 6 | 2 to 10 | Stops either side of middle grey that the graph spans. |
+| `master-on` | 0 | Each Channel, Luminance | What the master curve runs on. |
+
+```json
+{ "tool": "curves",
+  "params": { "master": [[0, 0.04], [0.42, 0.38], [0.62, 0.66], [1, 0.95]],
+              "blue": [[0, 0.03], [1, 0.98]] } }
+```
+
+Curves only depend on the pixel's color, so `.cube` export keeps them.
+
 ## Hue/Saturation (`hue-saturation`)
 
 Turns every color around the grey axis, then pushes colors toward or away from grey while

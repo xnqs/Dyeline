@@ -62,7 +62,7 @@ TEST(CudaBackend, MatchesCpuReferenceThroughWarps) {
     const std::vector<float> src = dyeline::test::make_frame(width, height);
     const dyeline::RenderGeometry geometry = dyeline::test::window_geometry(width, height);
     const dyeline::CompiledChain chain = dyeline::test::warp_chain();
-    ASSERT_EQ(chain.pass.count, 10);
+    ASSERT_EQ(chain.pass.count, 12);
     const dyeline::RenderPlan plan = dyeline::plan_render(chain.pass, geometry);
     const std::vector<float> expected = dyeline::test::cpu_reference(src, plan, chain);
 
@@ -73,7 +73,8 @@ TEST(CudaBackend, MatchesCpuReferenceThroughWarps) {
     ASSERT_EQ(cudaMalloc(&d_dst, bytes), cudaSuccess);
     ASSERT_EQ(cudaMemcpy(d_src, src.data(), bytes, cudaMemcpyHostToDevice), cudaSuccess);
     ASSERT_EQ(cudaMemset(d_dst, 0, bytes), cudaSuccess);
-    EXPECT_EQ(dyeline::cuda::render_plan(nullptr, d_src, d_dst, plan, nullptr, 0, /*wait=*/true),
+    EXPECT_EQ(dyeline::cuda::render_plan(nullptr, d_src, d_dst, plan, chain.table.data(),
+                                         chain.table.size(), /*wait=*/true),
               "");
     std::vector<float> result(src.size());
     ASSERT_EQ(cudaMemcpy(result.data(), d_dst, bytes, cudaMemcpyDeviceToHost), cudaSuccess);

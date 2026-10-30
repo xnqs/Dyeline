@@ -119,6 +119,31 @@ TEST(LookEditor, EditsTextParams) {
     EXPECT_EQ(editor.text_param(0, "file"), "looks/warm.cube");
 }
 
+TEST(LookEditor, EditsCurvesAsOneStepPerDrag) {
+    LookEditor editor{Look{}};
+    editor.add_tool("curves", 0);
+    ASSERT_EQ(dyeline::find_tool("curves")->curves.size(), 4u);
+    EXPECT_TRUE(dyeline::is_identity_curve(editor.curve_param(0, "master")));
+    editor.end_gesture();
+    // A drag: several moves of one point, then letting go.
+    for (double y : {0.55, 0.6, 0.65}) {
+        editor.set_curve_param(0, "master", {{0.0, 0.0}, {0.5, y}, {1.0, 1.0}});
+    }
+    editor.end_gesture();
+    EXPECT_EQ(editor.curve_param(0, "master").size(), 3u);
+    EXPECT_DOUBLE_EQ(editor.curve_param(0, "master")[1].y, 0.65);
+    EXPECT_EQ(editor.look().chain[0].params.at("master").dump(), "[[0.0,0.0],[0.5,0.65],[1.0,1.0]]");
+    ASSERT_TRUE(editor.undo());
+    EXPECT_TRUE(dyeline::is_identity_curve(editor.curve_param(0, "master")));
+    ASSERT_TRUE(editor.redo());
+    // Putting a curve back to the diagonal takes it out of the look.
+    editor.set_curve_param(0, "master", dyeline::identity_curve());
+    EXPECT_FALSE(editor.look().chain[0].params.contains("master"));
+    const int revision = editor.revision();
+    editor.set_curve_param(0, "master", dyeline::identity_curve());
+    EXPECT_EQ(editor.revision(), revision);  // no change, no undo step
+}
+
 TEST(LookEditor, ClampsStrengthAndToggles) {
     LookEditor editor = three_tools();
     editor.set_strength(0, 1.7);

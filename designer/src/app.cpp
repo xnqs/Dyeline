@@ -19,6 +19,7 @@
 
 #include "dyeline/color.h"
 #include "dyeline/cube_export.h"
+#include "dyeline/curves.h"
 #include "dyeline/effectcraft.h"
 #include "dyeline/library.h"
 #include "dyeline/tools.h"
@@ -26,6 +27,7 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
 #include "imgui_stdlib.h"
+#include "curve_edit.h"
 #include "handles.h"
 #include "preview.h"
 #include "scopes.h"
@@ -173,6 +175,7 @@ private:
     void toggle_favorite(const std::string& key);
     void draw_tool();
     void draw_params(const dyeline::ToolSpec& tool, const char* group);
+    void draw_curves(const dyeline::ToolSpec& tool);
     void draw_preview(float height);
     void draw_handles(const ScreenRect& rect);
     void request_preview(bool allow_draft);
@@ -221,6 +224,9 @@ private:
     bool open_replace_prompt_ = false;
     int view_ = 0;  // 0 auto, 1 as is, 2 linear to sRGB
     std::size_t selected_ = 0;
+    // The curve shown on a curves tool's graph, and the point being dragged on it, or -1.
+    std::size_t curve_shown_ = 0;
+    int curve_drag_ = -1;
     std::string status_;
     // Asking EffectCraft to render the saved look again, and whether to ask once more when
     // that's done because the look was saved again meanwhile.
@@ -753,6 +759,10 @@ void App::draw_tool() {
         ImGui::TextUnformatted("File");
     }
 
+    if (!tool->curves.empty()) {
+        draw_curves(*tool);
+    }
+
     // A tool with many parameters splits them into tabs, named by their groups in the order
     // they first appear; ungrouped parameters come first.
     std::vector<const char*> groups;
@@ -842,6 +852,125 @@ void App::draw_params(const ToolSpec& tool, const char* group) {
             ImGui::EndPopup();
         }
     }
+}
+
+// A curves tool's graph: buttons pick the curve, and the others show faintly behind it. Click
+// to add a point, drag one to move it, right-click one to remove it.
+void App::draw_curves(const ToolSpec& tool) {
+    static const ImU32 kCurveColors[] = {IM_COL32(230, 230, 230, 255), IM_COL32(235, 85, 80, 255),
+                                         IM_COL32(90, 200, 110, 255), IM_COL32(95, 145, 255, 255)};
+    curve_shown_ = std::min(curve_shown_, tool.curves.size() - 1);
+    for (std::size_t k = 0; k < tool.curves.size(); ++k) {
+        if (k > 0) {
+            ImGui::SameLine();
+        }
+        if (ImGui::RadioButton(tool.curves[k].label, curve_shown_ == k)) {
+            curve_shown_ = k;
+            curve_drag_ = -1;
+        }
+    }
+    const CurveSpec& shown = tool.curves[curve_shown_];
+    Curve curve = editor_.curve_param(selected_, shown.id);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(is_identity_curve(curve));
+    if (ImGui::SmallButton("Reset")) {
+        editor_.set_curve_param(selected_, shown.id, identity_curve());
+        editor_.end_gesture();
+        curve = identity_curve();
+    }
+    ImGui::EndDisabled();
+
+    // Square, fitting the panel when it can, with room below for the labels.
+    const ImVec2 room = ImGui::GetContentRegionAvail();
+    const float labels = 2.0f * ImGui::GetTextLineHeightWithSpacing();
+    const float size = std::max(std::min({room.x, room.y - labels, 320.0f}), 160.0f);
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton("##curve", ImVec2(size, size),
+                           ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+    ImGui::SetItemTooltip("Click to add a point, drag to move it, right-click to remove it.");
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const double gx = (mouse.x - origin.x) / size;
+    const double gy = 1.0 - (mouse.y - origin.y) / size;
+    const double reach = 7.0 / size;
+    if (ImGui::IsItemActivated() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        curve_drag_ = curve_point_near(curve, gx, gy, reach);
+        if (curve_drag_ < 0) {
+            curve_drag_ = add_curve_point(curve, std::clamp(gx, 0.0, 1.0));
+        }
+    }
+    if (ImGui::IsItemActive() && curve_drag_ >= 0 && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        move_curve_point(curve, curve_drag_, gx, gy);
+        editor_.set_curve_param(selected_, shown.id, curve);
+    }
+    if (ImGui::IsItemDeactivated()) {
+        curve_drag_ = -1;
+        editor_.end_gesture();
+    }
+    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) &&
+        remove_curve_point(curve, curve_point_near(curve, gx, gy, reach))) {
+        editor_.set_curve_param(selected_, shown.id, curve);
+        editor_.end_gesture();
+    }
+
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const auto to_screen = [&](double x, double y) {
+        return ImVec2(origin.x + static_cast<float>(x) * size,
+                      origin.y + static_cast<float>(1.0 - y) * size);
+    };
+    const ImVec2 far(origin.x + size, origin.y + size);
+    draw->AddRectFilled(origin, far, ImGui::GetColorU32(ImGuiCol_FrameBg));
+    const ImU32 grid = IM_COL32(255, 255, 255, 24);
+    for (int i = 1; i < 4; ++i) {
+        const float t = static_cast<float>(i) / 4.0f;
+        // The middle lines cross at middle grey.
+        const ImU32 line = i == 2 ? IM_COL32(255, 255, 255, 48) : grid;
+        draw->AddLine(ImVec2(origin.x + t * size, origin.y), ImVec2(origin.x + t * size, far.y), line);
+        draw->AddLine(ImVec2(origin.x, origin.y + t * size), ImVec2(far.x, origin.y + t * size), line);
+    }
+    draw->AddLine(to_screen(0.0, 0.0), to_screen(1.0, 1.0), grid);
+    draw->PushClipRect(origin, far, true);
+    const auto draw_curve = [&](const Curve& c, ImU32 color, float thickness) {
+        const CurveSpline spline(c);
+        ImVec2 line[129];
+        for (int i = 0; i <= 128; ++i) {
+            const double x = i / 128.0;
+            line[i] = to_screen(x, spline(x));
+        }
+        draw->AddPolyline(line, 129, color, thickness);
+    };
+    for (std::size_t k = 0; k < tool.curves.size(); ++k) {
+        const Curve other = editor_.curve_param(selected_, tool.curves[k].id);
+        if (k != curve_shown_ && !is_identity_curve(other)) {
+            draw_curve(other, (kCurveColors[k % 4] & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 90), 1.0f);
+        }
+    }
+    const ImU32 color = kCurveColors[curve_shown_ % 4];
+    draw_curve(curve, color, 2.0f);
+    for (std::size_t i = 0; i < curve.size(); ++i) {
+        const ImVec2 p = to_screen(curve[i].x, curve[i].y);
+        const bool hot = static_cast<int>(i) == curve_drag_ ||
+                         (ImGui::IsItemHovered() && curve_point_near(curve, gx, gy, reach) == static_cast<int>(i));
+        draw->AddCircleFilled(p, hot ? 5.0f : 4.0f, IM_COL32(0, 0, 0, 160));
+        draw->AddCircleFilled(p, hot ? 4.0f : 3.0f, color);
+    }
+    draw->PopClipRect();
+
+    // The graph's edges, in stops from middle grey.
+    for (const ParamSpec& spec : tool.params) {
+        if (std::strcmp(spec.id, "range") == 0) {
+            const double range = editor_.param(selected_, spec);
+            char left[32];
+            char right[32];
+            std::snprintf(left, sizeof(left), "-%.0f", range);
+            std::snprintf(right, sizeof(right), "+%.0f", range);
+            ImGui::TextDisabled("%s", left);
+            ImGui::SameLine(size * 0.5f - ImGui::CalcTextSize("grey").x * 0.5f);
+            ImGui::TextDisabled("grey");
+            ImGui::SameLine(size - ImGui::CalcTextSize(right).x);
+            ImGui::TextDisabled("%s", right);
+        }
+    }
+    ImGui::Spacing();
 }
 
 void App::request_preview(bool allow_draft) {
