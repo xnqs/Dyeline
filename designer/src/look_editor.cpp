@@ -180,6 +180,35 @@ void LookEditor::set_text_param(std::size_t i, const char* id, const std::string
     look_.chain[i].params[id] = value;
 }
 
+Curve LookEditor::curve_param(std::size_t i, const char* id) const {
+    if (!valid(i)) {
+        return identity_curve();
+    }
+    const nlohmann::json& params = look_.chain[i].params;
+    const auto it = params.find(id);
+    return it != params.end() ? read_curve(*it) : identity_curve();
+}
+
+void LookEditor::set_curve_param(std::size_t i, const char* id, const Curve& curve) {
+    if (!valid(i) || tool_at(i) == nullptr) {
+        return;
+    }
+    const Curve value = read_curve(write_curve(curve));
+    const bool identity = is_identity_curve(value);
+    const nlohmann::json stored = write_curve(value);
+    nlohmann::json& params = look_.chain[i].params;
+    const auto it = params.find(id);
+    if (identity ? it == params.end() : it != params.end() && *it == stored) {
+        return;
+    }
+    checkpoint("curve:" + std::to_string(i) + ":" + id);
+    if (identity) {
+        params.erase(id);
+    } else {
+        params[id] = stored;
+    }
+}
+
 void LookEditor::set_name(const std::string& name) {
     if (look_.meta.name == name) {
         return;

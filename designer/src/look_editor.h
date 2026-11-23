@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "dyeline/curves.h"
 #include "dyeline/look.h"
 #include "dyeline/tools.h"
 
@@ -52,6 +53,11 @@ public:
     // A text parameter, such as a LUT's file path.
     std::string text_param(std::size_t i, const char* id) const;
     void set_text_param(std::size_t i, const char* id, const std::string& value);
+
+    // A curve parameter (see ToolSpec::curves), read as the renderer reads it. Setting the
+    // identity removes it from the look. Dragging a point is one gesture, as with a slider.
+    Curve curve_param(std::size_t i, const char* id) const;
+    void set_curve_param(std::size_t i, const char* id, const Curve& curve);
 
     void set_name(const std::string& name);
     // Replaces the chain, name and tags with a preset's, as one undo step. The color settings

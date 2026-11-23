@@ -25,6 +25,7 @@
 #include "tools/bleach_bypass.h"
 #include "tools/color_space.h"
 #include "tools/contrast.h"
+#include "tools/curves.h"
 #include "tools/diffusion.h"
 #include "tools/duotone.h"
 #include "tools/exposure.h"
@@ -73,6 +74,7 @@
 #define DL_OP_EDGE_SOFTNESS 23
 #define DL_OP_SWING_TILT 24
 #define DL_OP_STREAKS 25
+#define DL_OP_CURVES 26
 
 // Spatial ops keep their blur size in their last parameter, for the host's render plan.
 #define DL_OP_BLUR_SIZE (DL_OP_PARAMS - 1)
@@ -259,6 +261,8 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
             return dl_tool_three_way(c, op->p, table);
         case DL_OP_LUT:
             return dl_tool_lut(c, op->p, table);
+        case DL_OP_CURVES:
+            return dl_tool_curves(c, op->p, table);
         case DL_OP_FILM_NEGATIVE:
             return dl_tool_film_negative(c, op->p, table);
         case DL_OP_FILM_PRINT:

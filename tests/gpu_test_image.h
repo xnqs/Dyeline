@@ -134,7 +134,8 @@ inline CompiledChain table_free_chain() {
 
 // A chain with both warp tools, off center, and spatial tools before, between and after
 // them, so the stage passes and reading through a warp run on the GPU, plus the two-level
-// blurs of Edge Softness and Swing-Tilt, Streaks' row-only blur and a Diffusion style.
+// blurs of Edge Softness and Swing-Tilt, Streaks' row-only blur and a Diffusion style. Curves,
+// both ways, give the passes after a warp table data to read.
 inline CompiledChain warp_chain() {
     Look look;
     auto add = [&](const char* id, double strength, nlohmann::json params) {
@@ -148,6 +149,11 @@ inline CompiledChain warp_chain() {
     add("lens-distortion", 0.8, {{"amount", 0.7}, {"edges", -0.4}, {"zoom", 1.1},
                                  {"center-x", 0.2}, {"center-y", -0.1}});
     add("exposure", 0.9, {{"stops", 0.5}});
+    add("curves", 0.9, {{"master", {{0.0, 0.05}, {0.45, 0.4}, {0.7, 0.8}, {1.0, 0.9}}},
+                        {"red", {{0.0, 0.0}, {0.5, 0.55}, {1.0, 1.0}}},
+                        {"blue", {{0.1, 0.0}, {0.6, 0.5}, {1.0, 0.95}}},
+                        {"range", 5.0}});
+    add("curves", 0.7, {{"master", {{0.0, 0.0}, {0.5, 0.56}, {1.0, 1.0}}}, {"master-on", 1}});
     add("halation", 0.8, {{"amount", 1.0}, {"threshold", 0.5}, {"size", 3.0}});
     add("chromatic-aberration", 0.9, {{"red", 0.8}, {"blue", -0.6}, {"fringe", 0.4},
                                       {"center-x", -0.3}});

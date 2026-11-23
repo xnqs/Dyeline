@@ -119,6 +119,13 @@ to type a value. Double-click a control, or right-click it, to put it back to it
 Tools with many controls split them into tabs: the 3-Way Grade has **Wheels**, **HSL** (hue,
 saturation and lightness for six color bands) and **Sat EQ** (saturation by brightness).
 
+**Curves** shows a graph above its controls. Pick **Master**, **Red**, **Green** or **Blue** to
+edit that curve; the others show faintly behind it. Click the graph to add a point, drag a
+point to move it, and right-click a point to remove it. The graph is in stops, with middle grey
+at the crossing of the brighter lines, and the numbers underneath are how many stops each edge
+is from grey (the tool's **Range**). **Reset** puts the shown curve back to the diagonal. Each
+drag is one undo step.
+
 ### Bottom bar
 
 **Undo** and **Redo** (Ctrl+Z and Ctrl+Shift+Z, or Cmd on macOS) step through every change,

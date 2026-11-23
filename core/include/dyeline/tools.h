@@ -55,6 +55,13 @@ struct HandleSpec {
     const char* y = nullptr;
 };
 
+// A curve the Look Designer edits on a graph, stored in the entry's params as a list of
+// [x, y] points beside the numbers (see curves.h).
+struct CurveSpec {
+    const char* id;
+    const char* label;
+};
+
 // A tool's parameter values, already migrated, defaulted and clamped, in ParamSpec order.
 using ParamValues = std::vector<double>;
 
@@ -98,6 +105,8 @@ struct ToolSpec {
     // When parameters have groups, the name of the designer's first tab, which holds the
     // ungrouped ones.
     const char* main_tab = "Main";
+    // Curves edited on a graph, which the designer shows above the parameters.
+    std::vector<CurveSpec> curves = {};
 };
 
 // All registered tools, in tools-drawer order.
