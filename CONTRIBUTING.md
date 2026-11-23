@@ -30,6 +30,7 @@ git commit -s
 | `core/src/gpu/` | Thin CUDA, Metal and OpenCL wrappers that launch the shared kernels. |
 | `plugin/` | The OFX plugin: parameters, clips and the bridge to the core. |
 | `designer/` | The Look Designer app (Dear ImGui on SDL3), launched by the plugin. `src/look_editor.*` is its editing model, tested without a window. |
+| `cli/` | `dyeline-cube`, the command-line LUT baker, built into the bundle beside the designer. `cube_cli.*` is the command, tested in-process. |
 | `tests/` | Unit tests for the core and a plugin load test. |
 | `schema/` | The JSON Schema of the `.dyeline` look format. |
 | `cmake/` | Build helpers: OpenFX SDK fetch and bundle layout. |

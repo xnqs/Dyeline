@@ -72,7 +72,7 @@ def make_zip(source_dir, top, out_path):
 def linux(bundle, out, version):
     arch = "arm64" if platform.machine() in ("aarch64", "arm64") else "x86_64"
     arch_dir = "Linux-arm-64" if arch == "arm64" else "Linux-x86-64"
-    check_bundle(bundle, arch_dir, ["Dyeline.ofx", "dyeline-designer"])
+    check_bundle(bundle, arch_dir, ["Dyeline.ofx", "dyeline-designer", "dyeline-cube"])
     name = f"Dyeline-{version}-linux-{arch}"
     with tempfile.TemporaryDirectory() as tmp:
         staging = os.path.join(tmp, name)
@@ -94,7 +94,7 @@ def normalize(info):
 
 
 def macos(bundle, out, version):
-    check_bundle(bundle, "MacOS", ["Dyeline.ofx", "dyeline-designer"])
+    check_bundle(bundle, "MacOS", ["Dyeline.ofx", "dyeline-designer", "dyeline-cube"])
     name = f"Dyeline-{version}-macos"
     results = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -129,7 +129,7 @@ def macos(bundle, out, version):
 
 
 def windows(bundle, out, version, require_installer):
-    check_bundle(bundle, "Win64", ["Dyeline.ofx", "dyeline-designer.exe"])
+    check_bundle(bundle, "Win64", ["Dyeline.ofx", "dyeline-designer.exe", "dyeline-cube.exe"])
     name = f"Dyeline-{version}-windows-x64"
     results = []
     with tempfile.TemporaryDirectory() as tmp:
