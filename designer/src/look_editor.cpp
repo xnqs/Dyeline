@@ -180,32 +180,33 @@ void LookEditor::set_text_param(std::size_t i, const char* id, const std::string
     look_.chain[i].params[id] = value;
 }
 
-Curve LookEditor::curve_param(std::size_t i, const char* id) const {
+Curve LookEditor::curve_param(std::size_t i, const CurveSpec& spec) const {
     if (!valid(i)) {
-        return identity_curve();
+        return neutral_curve(spec.kind);
     }
     const nlohmann::json& params = look_.chain[i].params;
-    const auto it = params.find(id);
-    return it != params.end() ? read_curve(*it) : identity_curve();
+    const auto it = params.find(spec.id);
+    return it != params.end() ? read_curve(*it, spec.kind) : neutral_curve(spec.kind);
 }
 
-void LookEditor::set_curve_param(std::size_t i, const char* id, const Curve& curve) {
+void LookEditor::set_curve_param(std::size_t i, const CurveSpec& spec, const Curve& curve) {
     if (!valid(i) || tool_at(i) == nullptr) {
         return;
     }
-    const Curve value = read_curve(write_curve(curve));
-    const bool identity = is_identity_curve(value);
-    const nlohmann::json stored = write_curve(value);
+    const nlohmann::json stored = write_curve(read_curve(write_curve(curve), spec.kind));
+    // Only the starting curve itself is left out of the look: a level or diagonal curve with
+    // points added keeps them, so a point just added stays where it was put.
+    const bool initial = stored == write_curve(neutral_curve(spec.kind));
     nlohmann::json& params = look_.chain[i].params;
-    const auto it = params.find(id);
-    if (identity ? it == params.end() : it != params.end() && *it == stored) {
+    const auto it = params.find(spec.id);
+    if (initial ? it == params.end() : it != params.end() && *it == stored) {
         return;
     }
-    checkpoint("curve:" + std::to_string(i) + ":" + id);
-    if (identity) {
-        params.erase(id);
+    checkpoint(std::string("curve:") + std::to_string(i) + ":" + spec.id);
+    if (initial) {
+        params.erase(spec.id);
     } else {
-        params[id] = stored;
+        params[spec.id] = stored;
     }
 }
 

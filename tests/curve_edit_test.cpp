@@ -51,4 +51,18 @@ TEST(CurveEdit, KeepsTwoPoints) {
     EXPECT_EQ(curve.size(), 2u);
 }
 
+TEST(CurveEdit, HueCurvesWrapAround) {
+    using dyeline::CurveKind;
+    Curve curve = dyeline::neutral_curve(CurveKind::Hue);  // points at every sixth from 0
+    EXPECT_EQ(add_curve_point(curve, 0.995, CurveKind::Hue), -1);  // too close to 0, a turn on
+    EXPECT_EQ(add_curve_point(curve, 0.9, CurveKind::Hue), 6);
+    EXPECT_NEAR(curve[6].y, 0.5, 1e-12);
+    move_curve_point(curve, 6, 1.3, 0.8, CurveKind::Hue);
+    EXPECT_DOUBLE_EQ(curve[6].x, 1.0 - kCurvePointGap);  // short of the wrap
+    while (curve.size() > 1) {
+        ASSERT_TRUE(remove_curve_point(curve, 0, CurveKind::Hue));
+    }
+    EXPECT_FALSE(remove_curve_point(curve, 0, CurveKind::Hue));
+}
+
 }  // namespace

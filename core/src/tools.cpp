@@ -481,6 +481,43 @@ bool prepare_curves(PrepareContext& context, dl_op& op, std::string& problem) {
     return append_table(context, samples.data(), samples.size(), problem);
 }
 
+// Hue Curves: each curve sampled around the hue circle into the table, already as radians,
+// a saturation scale and stops (see hue_curves.h). Left out while all three are level.
+constexpr const char* kHueCurveIds[3] = {"hue-hue", "hue-sat", "hue-lum"};
+
+bool prepare_hue_curves(PrepareContext& context, dl_op& op, std::string& problem) {
+    Curve curves[3];
+    bool neutral = true;
+    for (int k = 0; k < 3; ++k) {
+        const auto it = context.params.find(kHueCurveIds[k]);
+        curves[k] = it != context.params.end() ? read_curve(*it, CurveKind::Hue)
+                                               : neutral_curve(CurveKind::Hue);
+        neutral = neutral && is_neutral_curve(curves[k], CurveKind::Hue);
+    }
+    if (neutral) {
+        return false;
+    }
+    op.tool = DL_OP_HUE_CURVES;
+    op.p[0] = static_cast<float>(context.table.size());
+    std::vector<float> samples(static_cast<std::size_t>(DL_HUE_CURVE_SAMPLES) * 3);
+    for (int k = 0; k < 3; ++k) {
+        const CurveSpline spline(curves[k], CurveKind::Hue);
+        for (int i = 0; i < DL_HUE_CURVE_SAMPLES; ++i) {
+            const double y = spline(static_cast<double>(i) / DL_HUE_CURVE_SAMPLES) - 0.5;
+            double value = 0.0;
+            if (k == 0) {
+                value = y * 2.0 * DL_HUE_CURVE_TURN * kPi / 180.0;
+            } else if (k == 1) {
+                value = 1.0 + 2.0 * y;
+            } else {
+                value = y * 2.0 * DL_HUE_CURVE_STOPS;
+            }
+            samples[static_cast<std::size_t>(k * DL_HUE_CURVE_SAMPLES + i)] = static_cast<float>(value);
+        }
+    }
+    return append_table(context, samples.data(), samples.size(), problem);
+}
+
 bool prepare_film_negative(PrepareContext& context, dl_op& op, std::string& problem) {
     const film::NegativeStock& stock = film::negative_stock(static_cast<int>(std::lround(context.values[0])));
     op.tool = DL_OP_FILM_NEGATIVE;
@@ -810,6 +847,11 @@ std::vector<ToolSpec> make_tools() {
                      {{"hue", "Hue", 0.0, -180.0, 180.0},
                       {"saturation", "Saturation", 1.0, 0.0, 4.0}},
                      nullptr, encode_hue_saturation, hue_saturation_is_identity, nullptr});
+    tools.push_back({"hue-curves", "Hue Curves", ToolCategory::Matte, 1, {}, nullptr, encode_unused,
+                     never_identity, prepare_hue_curves});
+    tools.back().curves = {{"hue-hue", "Hue vs Hue", CurveKind::Hue},
+                           {"hue-sat", "Hue vs Sat", CurveKind::Hue},
+                           {"hue-lum", "Hue vs Lum", CurveKind::Hue}};
     tools.push_back({"black-white", "Black & White", ToolCategory::Matte, 1,
                      {{"red", "Red", 0.27, 0.0, 2.0},
                       {"green", "Green", 0.67, 0.0, 2.0},

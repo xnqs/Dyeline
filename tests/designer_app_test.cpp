@@ -58,6 +58,20 @@ TEST(DesignerApp, DrawsTheCurvesGraph) {
     EXPECT_EQ(trip.look, text);
 }
 
+TEST(DesignerApp, DrawsTheHueCurvesGraph) {
+    Look look;
+    look.meta.name = "Hue Curves";
+    dyeline::ToolEntry curves;
+    curves.tool = "hue-curves";
+    curves.params["hue-hue"] = nlohmann::json::parse("[[0, 0.6], [0.5, 0.5]]");
+    curves.params["hue-sat"] = nlohmann::json::parse("[[0.3, 0.2]]");
+    look.chain.push_back(curves);
+    const std::string text = dyeline::write_look(look);
+    const auto trip = dyeline::designer::run(DYELINE_DESIGNER_PATH, text, {"--test-frames", "3"});
+    ASSERT_EQ(trip.outcome, Outcome::Applied) << trip.error;
+    EXPECT_EQ(trip.look, text);
+}
+
 TEST(DesignerApp, SavesTheLookFile) {
     const auto path = std::filesystem::temp_directory_path() / "dyeline_designer_app_test.dyeline";
     std::filesystem::remove(path);

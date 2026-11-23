@@ -126,6 +126,11 @@ at the crossing of the brighter lines, and the numbers underneath are how many s
 is from grey (the tool's **Range**). **Reset** puts the shown curve back to the diagonal. Each
 drag is one undo step.
 
+**Hue Curves** works the same way, with **Hue vs Hue**, **Hue vs Sat** and **Hue vs Lum**. Its
+graphs run around the hue circle, shown by the colored strip under them, from red back to red,
+and start as a level line with a point at each of the six hues. Drag a hue's point up or down to
+turn, saturate or brighten just that hue, and add points to narrow the change.
+
 ### Bottom bar
 
 **Undo** and **Redo** (Ctrl+Z and Ctrl+Shift+Z, or Cmd on macOS) step through every change,

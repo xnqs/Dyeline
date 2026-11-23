@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "dyeline/curves.h"
 #include "dyeline/kernels/chain_kernel.h"
 #include "dyeline/look.h"
 
@@ -60,6 +61,7 @@ struct HandleSpec {
 struct CurveSpec {
     const char* id;
     const char* label;
+    CurveKind kind = CurveKind::Tone;
 };
 
 // A tool's parameter values, already migrated, defaulted and clamped, in ParamSpec order.

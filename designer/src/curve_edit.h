@@ -14,13 +14,16 @@ inline constexpr double kCurvePointGap = 0.01;
 int curve_point_near(const Curve& curve, double x, double y, double reach);
 
 // Adds a point on the curve at x, so the curve keeps its shape until it is dragged, and
-// returns its index. Returns -1 when the curve is full or x is too close to another point.
-int add_curve_point(Curve& curve, double x);
+// returns its index. Returns -1 when the curve is full or x is too close to another point
+// (for a hue curve, also across the wrap from x = 1 to 0).
+int add_curve_point(Curve& curve, double x, CurveKind kind = CurveKind::Tone);
 
-// Moves point i toward (x, y), within the graph and between its neighbors.
-void move_curve_point(Curve& curve, int i, double x, double y);
+// Moves point i toward (x, y), within the graph and between its neighbors. A hue curve's
+// points stay short of x = 1, which is x = 0 again.
+void move_curve_point(Curve& curve, int i, double x, double y, CurveKind kind = CurveKind::Tone);
 
-// Removes point i, unless only two points are left. Returns whether it did.
-bool remove_curve_point(Curve& curve, int i);
+// Removes point i, unless it would leave a tone curve fewer than two points or a hue curve
+// none. Returns whether it did.
+bool remove_curve_point(Curve& curve, int i, CurveKind kind = CurveKind::Tone);
 
 }  // namespace dyeline::designer
