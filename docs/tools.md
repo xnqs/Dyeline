@@ -75,6 +75,34 @@ keeping their luminance (ACEScg weights). Greys never change.
 | `hue` | 0 | -180 to 180 | Degrees to turn. +120 takes red to green. |
 | `saturation` | 1 | 0 to 4 | 0 is grey, 1 unchanged, 2 twice as colorful. |
 
+## Hue Curves (`hue-curves`)
+
+Three curves around the hue circle: **Hue vs Hue** turns colors of a chosen hue, **Hue vs Sat**
+makes them more or less colorful, and **Hue vs Lum** brightens or darkens them. Each graph's x
+is the pixel's hue, from red at the left through yellow, green, cyan, blue and magenta back to
+red at the right, and wraps around, so the curve's two ends meet. The level line through the
+middle changes nothing; a new curve has a level point at each of the six hues, ready to drag.
+
+| Curve | Top of the graph | Bottom of the graph |
+| --- | --- | --- |
+| `hue-hue` | turns the hue by +90 degrees (toward the next hue to the right) | -90 degrees |
+| `hue-sat` | twice the saturation | grey |
+| `hue-lum` | +2 stops | -2 stops |
+
+The curves work like the 3-Way Grade's HSL tab, in the plane across the grey axis: saturation
+keeps the channels' average, all three read the pixel's original hue, and Hue vs Lum reaches
+colors only, fully from a chroma of a third of the channels' average, so greys never change.
+Between points the curves are smooth and never overshoot, as in Curves.
+
+| Parameter | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `hue-hue`, `hue-sat`, `hue-lum` | level | 1 to 16 points | Each curve's points, as `[x, y]` pairs from 0 to 1. |
+
+```json
+{ "tool": "hue-curves",
+  "params": { "hue-sat": [[0, 0.5], [0.17, 0.5], [0.33, 0.25], [0.5, 0.5], [0.67, 0.5], [0.83, 0.5]] } }
+```
+
 ## Black & White (`black-white`)
 
 Makes grey from a weighted mix of the channels, like a color filter on black-and-white film.

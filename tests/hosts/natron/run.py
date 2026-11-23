@@ -58,6 +58,12 @@ LOOKS = {
         tool("edge-softness", blur=1.0),
         tool("diffusion", amount=0.3, size=1.0),
     ],
+    # Curve tools keep their points as lists in the look, beside the numbers.
+    "curves": [
+        tool("curves", master=[[0, 0.05], [0.45, 0.4], [0.7, 0.78], [1, 0.95]],
+             blue=[[0, 0.03], [0.5, 0.46], [1, 1]]),
+        tool("hue-curves", **{"hue-sat": [[0, 0.8], [0.5, 0.3]], "hue-hue": [[0.33, 0.6]]}),
+    ],
 }
 
 
@@ -153,6 +159,10 @@ def main():
         reference = os.path.join(work, name + ".frame")
         subprocess.run([args.reference, look_path, source_frame, reference], check=True)
         want = read_frame(reference)
+        # A look that left the frame as it was would match a plugin that bypassed it too.
+        if np.abs(want[..., :3] - source[..., :3]).max() < 1e-3:
+            failures.append("%s: the look doesn't change the frame" % name)
+            continue
 
         for gpu in ("cpu", "own-gpu"):
             label = "%s/%s" % (name, gpu)

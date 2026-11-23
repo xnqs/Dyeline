@@ -38,9 +38,28 @@ bool is_identity_curve(const Curve& curve) {
            curve.size() >= 2 && curve.front().x == 0.0 && curve.back().x == 1.0;
 }
 
-Curve read_curve(const nlohmann::json& value) {
-    if (!value.is_array()) {
+Curve neutral_curve(CurveKind kind) {
+    if (kind == CurveKind::Tone) {
         return identity_curve();
+    }
+    Curve curve;
+    for (int i = 0; i < 6; ++i) {
+        curve.push_back({i / 6.0, 0.5});
+    }
+    return curve;
+}
+
+bool is_neutral_curve(const Curve& curve, CurveKind kind) {
+    if (kind == CurveKind::Tone) {
+        return is_identity_curve(curve);
+    }
+    return !curve.empty() &&
+           std::all_of(curve.begin(), curve.end(), [](const CurvePoint& p) { return p.y == 0.5; });
+}
+
+Curve read_curve(const nlohmann::json& value, CurveKind kind) {
+    if (!value.is_array()) {
+        return neutral_curve(kind);
     }
     Curve points;
     for (const nlohmann::json& point : value) {
@@ -48,10 +67,11 @@ Curve read_curve(const nlohmann::json& value) {
             break;
         }
         if (point.is_array() && point.size() == 2 && point[0].is_number() && point[1].is_number()) {
-            const double x = point[0].get<double>();
+            double x = point[0].get<double>();
             const double y = point[1].get<double>();
             if (std::isfinite(x) && std::isfinite(y)) {
-                points.push_back({std::clamp(x, 0.0, 1.0), std::clamp(y, 0.0, 1.0)});
+                x = kind == CurveKind::Hue ? x - std::floor(x) : std::clamp(x, 0.0, 1.0);
+                points.push_back({x, std::clamp(y, 0.0, 1.0)});
             }
         }
     }
@@ -64,6 +84,14 @@ Curve read_curve(const nlohmann::json& value) {
         } else {
             merged.push_back(p);
         }
+    }
+    if (kind == CurveKind::Hue) {
+        // The last point may sit just short of the first one a turn on.
+        if (merged.size() > 1 && merged.front().x + 1.0 - merged.back().x < kMinGap) {
+            merged.front().y = merged.back().y;
+            merged.pop_back();
+        }
+        return merged.empty() ? neutral_curve(kind) : merged;
     }
     return merged.size() >= 2 ? merged : identity_curve();
 }
@@ -78,9 +106,23 @@ nlohmann::json write_curve(const Curve& curve) {
 
 // Tangents by PCHIP (Fritsch-Carlson, with Fritsch-Butland's weighted harmonic mean inside):
 // zero where the curve turns, so no segment overshoots its two points.
-CurveSpline::CurveSpline(Curve points) : points_(std::move(points)) {
-    if (points_.size() < 2) {
-        points_ = identity_curve();
+CurveSpline::CurveSpline(Curve points, CurveKind kind) : periodic_(kind == CurveKind::Hue) {
+    if (periodic_) {
+        if (points.empty()) {
+            points = neutral_curve(kind);
+        }
+        // Two points (or the one there is) from each side, a turn away.
+        const std::size_t n = points.size();
+        const std::size_t wrap = std::min<std::size_t>(n, 2);
+        for (std::size_t k = n - wrap; k < n; ++k) {
+            points_.push_back({points[k].x - 1.0, points[k].y});
+        }
+        points_.insert(points_.end(), points.begin(), points.end());
+        for (std::size_t k = 0; k < wrap; ++k) {
+            points_.push_back({points[k].x + 1.0, points[k].y});
+        }
+    } else {
+        points_ = points.size() < 2 ? identity_curve() : std::move(points);
     }
     const std::size_t n = points_.size();
     std::vector<double> h(n - 1);
@@ -93,17 +135,20 @@ CurveSpline::CurveSpline(Curve points) : points_(std::move(points)) {
     if (n == 2) {
         tangents_[0] = d[0];
         tangents_[1] = d[0];
-    } else {
-        for (std::size_t k = 1; k + 1 < n; ++k) {
-            if (d[k - 1] * d[k] > 0.0) {
-                const double w1 = 2.0 * h[k] + h[k - 1];
-                const double w2 = h[k] + 2.0 * h[k - 1];
-                tangents_[k] = (w1 + w2) / (w1 / d[k - 1] + w2 / d[k]);
-            }
-        }
-        tangents_[0] = end_tangent(h[0], h[1], d[0], d[1]);
-        tangents_[n - 1] = end_tangent(h[n - 2], h[n - 3], d[n - 2], d[n - 3]);
+        return;
     }
+    for (std::size_t k = 1; k + 1 < n; ++k) {
+        if (d[k - 1] * d[k] > 0.0) {
+            const double w1 = 2.0 * h[k] + h[k - 1];
+            const double w2 = h[k] + 2.0 * h[k - 1];
+            tangents_[k] = (w1 + w2) / (w1 / d[k - 1] + w2 / d[k]);
+        }
+    }
+    if (periodic_) {
+        return;  // the copied points' outer segments lie outside the turn evaluated
+    }
+    tangents_[0] = end_tangent(h[0], h[1], d[0], d[1]);
+    tangents_[n - 1] = end_tangent(h[n - 2], h[n - 3], d[n - 2], d[n - 3]);
     // A falling continuation would send the darkest or brightest values off to nothing or to
     // infinity, so the ends hold level instead.
     tangents_.front() = std::max(tangents_.front(), 0.0);
@@ -111,10 +156,12 @@ CurveSpline::CurveSpline(Curve points) : points_(std::move(points)) {
 }
 
 double CurveSpline::operator()(double x) const {
-    if (x <= points_.front().x) {
+    if (periodic_) {
+        x -= std::floor(x);
+    } else if (x <= points_.front().x) {
         return points_.front().y + (x - points_.front().x) * tangents_.front();
     }
-    if (x >= points_.back().x) {
+    if (!periodic_ && x >= points_.back().x) {
         return points_.back().y + (x - points_.back().x) * tangents_.back();
     }
     const auto upper = std::upper_bound(points_.begin(), points_.end(), x,

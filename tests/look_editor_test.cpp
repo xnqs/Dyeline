@@ -123,25 +123,41 @@ TEST(LookEditor, EditsCurvesAsOneStepPerDrag) {
     LookEditor editor{Look{}};
     editor.add_tool("curves", 0);
     ASSERT_EQ(dyeline::find_tool("curves")->curves.size(), 4u);
-    EXPECT_TRUE(dyeline::is_identity_curve(editor.curve_param(0, "master")));
+    const dyeline::CurveSpec& master = dyeline::find_tool("curves")->curves[0];
+    EXPECT_TRUE(dyeline::is_identity_curve(editor.curve_param(0, master)));
     editor.end_gesture();
     // A drag: several moves of one point, then letting go.
     for (double y : {0.55, 0.6, 0.65}) {
-        editor.set_curve_param(0, "master", {{0.0, 0.0}, {0.5, y}, {1.0, 1.0}});
+        editor.set_curve_param(0, master, {{0.0, 0.0}, {0.5, y}, {1.0, 1.0}});
     }
     editor.end_gesture();
-    EXPECT_EQ(editor.curve_param(0, "master").size(), 3u);
-    EXPECT_DOUBLE_EQ(editor.curve_param(0, "master")[1].y, 0.65);
+    EXPECT_EQ(editor.curve_param(0, master).size(), 3u);
+    EXPECT_DOUBLE_EQ(editor.curve_param(0, master)[1].y, 0.65);
     EXPECT_EQ(editor.look().chain[0].params.at("master").dump(), "[[0.0,0.0],[0.5,0.65],[1.0,1.0]]");
     ASSERT_TRUE(editor.undo());
-    EXPECT_TRUE(dyeline::is_identity_curve(editor.curve_param(0, "master")));
+    EXPECT_TRUE(dyeline::is_identity_curve(editor.curve_param(0, master)));
     ASSERT_TRUE(editor.redo());
     // Putting a curve back to the diagonal takes it out of the look.
-    editor.set_curve_param(0, "master", dyeline::identity_curve());
+    editor.set_curve_param(0, master, dyeline::identity_curve());
     EXPECT_FALSE(editor.look().chain[0].params.contains("master"));
     const int revision = editor.revision();
-    editor.set_curve_param(0, "master", dyeline::identity_curve());
+    editor.set_curve_param(0, master, dyeline::identity_curve());
     EXPECT_EQ(editor.revision(), revision);  // no change, no undo step
+}
+
+TEST(LookEditor, KeepsPointsAddedToALevelHueCurve) {
+    LookEditor editor{Look{}};
+    editor.add_tool("hue-curves", 0);
+    const dyeline::CurveSpec& sat = dyeline::find_tool("hue-curves")->curves[1];
+    ASSERT_EQ(sat.kind, dyeline::CurveKind::Hue);
+    dyeline::Curve curve = editor.curve_param(0, sat);
+    EXPECT_EQ(curve.size(), 6u);
+    // A point added on the level line changes nothing yet, but stays.
+    curve.push_back({0.95, 0.5});
+    editor.set_curve_param(0, sat, curve);
+    EXPECT_EQ(editor.curve_param(0, sat).size(), 7u);
+    editor.set_curve_param(0, sat, dyeline::neutral_curve(dyeline::CurveKind::Hue));
+    EXPECT_FALSE(editor.look().chain[0].params.contains("hue-sat"));
 }
 
 TEST(LookEditor, ClampsStrengthAndToggles) {

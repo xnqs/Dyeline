@@ -33,6 +33,7 @@
 #include "tools/grain.h"
 #include "tools/halation.h"
 #include "tools/highlight_shoulder.h"
+#include "tools/hue_curves.h"
 #include "tools/lens_vignette.h"
 #include "tools/lens_warp.h"
 #include "tools/local_contrast.h"
@@ -75,6 +76,7 @@
 #define DL_OP_SWING_TILT 24
 #define DL_OP_STREAKS 25
 #define DL_OP_CURVES 26
+#define DL_OP_HUE_CURVES 27
 
 // Spatial ops keep their blur size in their last parameter, for the host's render plan.
 #define DL_OP_BLUR_SIZE (DL_OP_PARAMS - 1)
@@ -263,6 +265,8 @@ DL_DEVICE dl_float4 dl_run_op(dl_float4 c, DL_CONSTANT const struct dl_op* op,
             return dl_tool_lut(c, op->p, table);
         case DL_OP_CURVES:
             return dl_tool_curves(c, op->p, table);
+        case DL_OP_HUE_CURVES:
+            return dl_tool_hue_curves(c, op->p, table);
         case DL_OP_FILM_NEGATIVE:
             return dl_tool_film_negative(c, op->p, table);
         case DL_OP_FILM_PRINT:

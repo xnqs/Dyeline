@@ -55,7 +55,7 @@ TEST(Tools, AllAreRegistered) {
                            "telecine-net", "gradient-tint", "grad-exposure", "spot-exposure",
                            "fill-light", "spot-fill", "four-way", "blockbuster", "color-filter",
                            "duotone", "local-contrast", "lens-distortion", "chromatic-aberration",
-                           "edge-softness", "swing-tilt", "streaks", "curves"}) {
+                           "edge-softness", "swing-tilt", "streaks", "curves", "hue-curves"}) {
         EXPECT_NE(dyeline::find_tool(id), nullptr) << id;
     }
 }
@@ -167,6 +167,58 @@ TEST(Curves, ContinuesPastTheGraphAndPassesNonPositiveValues) {
         EXPECT_GT(y, previous) << "at " << stops << " stops";
         previous = y;
     }
+}
+
+// The six level points of a new hue curve, with the one at `hue` (in sixths: 0 red, 2 green,
+// 4 blue) moved to height y.
+nlohmann::json hue_point(int hue, double y) {
+    nlohmann::json curve = nlohmann::json::array();
+    for (int i = 0; i < 6; ++i) {
+        curve.push_back({i / 6.0, i == hue ? y : 0.5});
+    }
+    return curve;
+}
+
+// The hue of an RGB color in the hue curves' plane, in degrees from red.
+float hue_of(const std::vector<float>& c) {
+    const float a = (2.0f * c[0] - c[1] - c[2]) * 0.40824829f;
+    const float b = (c[1] - c[2]) * 0.70710678f;
+    const float h = std::atan2(b, a) * 57.2957795f;
+    return h < 0.0f ? h + 360.0f : h;
+}
+
+TEST(HueCurves, SkipLevelCurves) {
+    EXPECT_TRUE(skipped(tool("hue-curves", nlohmann::json::object())));
+    EXPECT_TRUE(skipped(tool("hue-curves", {{"hue-sat", hue_point(0, 0.5)}})));
+    EXPECT_FALSE(skipped(tool("hue-curves", {{"hue-lum", hue_point(4, 0.6)}})));
+}
+
+TEST(HueCurves, HueVsSatScalesOneHueAndKeepsTheAverage) {
+    const std::vector<float> red = {0.6f, 0.1f, 0.1f, 1.0f};
+    const auto grey = run(tool("hue-curves", {{"hue-sat", hue_point(0, 0.0)}}), red);
+    EXPECT_NEAR(grey[0], 0.2667f, 1e-4f);  // the channels' average
+    EXPECT_NEAR(grey[1], grey[0], 1e-5f);
+    EXPECT_NEAR(grey[2], grey[0], 1e-5f);
+    // Cyan, half a turn away and past the neighboring level points, doesn't move.
+    const std::vector<float> cyan = {0.1f, 0.4f, 0.4f, 1.0f};
+    const auto kept = run(tool("hue-curves", {{"hue-sat", hue_point(0, 0.0)}}), cyan);
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_NEAR(kept[static_cast<std::size_t>(k)], cyan[static_cast<std::size_t>(k)], 1e-6f);
+    }
+    // Greys have no hue and stay put.
+    const auto still = run(tool("hue-curves", {{"hue-sat", hue_point(0, 1.0)}}), {0.3f, 0.3f, 0.3f, 1.0f});
+    EXPECT_FLOAT_EQ(still[0], 0.3f);
+}
+
+TEST(HueCurves, HueVsHueTurnsAndHueVsLumBrightensColors) {
+    const std::vector<float> green = {0.1f, 0.5f, 0.1f, 1.0f};  // 120 degrees
+    const auto turned = run(tool("hue-curves", {{"hue-hue", hue_point(2, 1.0)}}), green);
+    EXPECT_NEAR(hue_of(turned), 120.0f + 90.0f, 0.05f);  // the top turns by 90 degrees
+    const auto brighter = run(tool("hue-curves", {{"hue-lum", hue_point(2, 0.75)}}), green);
+    EXPECT_NEAR(brighter[1] / green[1], 2.0f, 1e-4f);  // a quarter of the way up is one stop
+    EXPECT_NEAR(brighter[0] / green[0], 2.0f, 1e-4f);
+    const auto grey = run(tool("hue-curves", {{"hue-lum", hue_point(2, 1.0)}}), {0.3f, 0.3f, 0.3f, 1.0f});
+    EXPECT_FLOAT_EQ(grey[1], 0.3f);
 }
 
 TEST(HueSaturation, ZeroSaturationGivesGreyOfTheSameLuminance) {
