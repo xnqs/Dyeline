@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.7.0 beta
+
+Milestone 4: curves and batch LUTs. Looks made with 0.1, 0.5 and 0.6 load and render unchanged.
+
+### New tools
+
+- **Curves**: a master curve and one each for red, green and blue, drawn through up to 16
+  points as a smooth curve that never overshoots its points. The graph works in stops around
+  middle grey, over a Range of 2 to 10 stops either side, and the master runs on each channel
+  (contrast also changes saturation, as on film) or on luminance (hue and saturation stay).
+- **Hue Curves**: Hue vs Hue, Hue vs Sat and Hue vs Lum, curves around the hue circle that
+  turn a hue up to 90 degrees either way, take its saturation from grey to twice, or add up to
+  2 stops to it. They start level, with a point at each of the six hues ready to drag.
+- The Look Designer draws both on a graph: click to add or drag a point, right-click to remove
+  one, and each drag is one undo step. Hue curves show the hues under the graph.
+- Both only depend on a pixel's color, so `.cube` export keeps them.
+- Two bundled looks that use them: **Cross Process** (per-channel curves, blue shadows and
+  yellow highlights) and **Teal Push** (greens turned toward teal, oranges and skin a little
+  richer).
+
+### dyeline-cube
+
+- A command-line LUT baker that ships beside the Look Designer: it bakes one look, several, or
+  every `.dyeline` file in a folder into `.cube` files, as Export .cube does. `--input`,
+  `--output` and `--mode` replace each look's color settings, so a folder of looks can be baked
+  for one camera's log space; `--out` writes into another folder, keeping subfolders. See
+  [docs/user-guide.md](docs/user-guide.md#baking-luts-from-the-command-line).
+
+### Build and CI
+
+- Natron on CI now also renders a look with curves, read from a look file, and every test look
+  must change the frame.
+- macOS builds on the macos-15 runner (still universal, for macOS 12 and later). Linux CI
+  installs only CUDA's compiler and runtime, which took its job from hours to about 10 minutes.
+
+### Known issues
+
+- Warps leave transparent black where they read past the frame's edges (Lens Distortion's
+  corners, for instance); use Zoom to fill the frame.
+- The film stocks from 0.5 still await a colorist's check, and the installers aren't signed yet.
+- Resolve and Nuke are checked by hand ([docs/hosts.md](docs/hosts.md)); only Natron renders on CI.
+
 ## 0.6.0 beta
 
 Milestone 3: lens tools and polish. Looks made with 0.1 and 0.5 load and render unchanged.
