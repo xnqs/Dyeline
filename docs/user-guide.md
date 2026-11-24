@@ -152,6 +152,26 @@ neighbors are left out: the gradient and spot tools, **Lens Vignette**, **Lens D
 **Streaks**, **Local Contrast**, **Telecine Net** and **Halation**.
 The export dialog lists what will be left out, and the file's header names it.
 
+### Baking LUTs from the command line
+
+`dyeline-cube` bakes looks the same way without opening the designer, many at once. It sits in
+the plugin bundle next to the designer: `Dyeline.ofx.bundle/Contents/Win64/dyeline-cube.exe` on
+Windows, `Contents/MacOS/dyeline-cube` on macOS and `Contents/Linux-x86-64/dyeline-cube` on
+Linux.
+
+```sh
+# One look: writes "Golden Hour.cube" beside it.
+dyeline-cube "Golden Hour.dyeline"
+
+# Every look in a folder and its subfolders, for ARRI LogC3 footage graded for Rec.709,
+# into one folder of LUTs at 65 points.
+dyeline-cube looks/ --input logc3 --output rec709 --mode full --size 65 --out luts/
+```
+
+`--input`, `--output` and `--mode` replace each look's own color settings (see
+[Color settings](#color-settings)); `dyeline-cube --list-spaces` lists the space names. It
+prints what each LUT leaves out, and exits with 1 if any look couldn't be baked.
+
 ## Look files
 
 A `.dyeline` file is one look, as a small text (JSON) file. Saving to your looks writes one,

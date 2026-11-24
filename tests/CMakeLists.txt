@@ -38,6 +38,12 @@ dyeline_set_warnings(dyeline_designer_tests)
 add_dependencies(dyeline_designer_tests dyeline_designer_stub)
 gtest_discover_tests(dyeline_designer_tests)
 
+# dyeline-cube, run in-process.
+add_executable(dyeline_cube_cli_tests cube_cli_test.cpp)
+target_link_libraries(dyeline_cube_cli_tests PRIVATE dyeline_cube_cli GTest::gtest_main)
+dyeline_set_warnings(dyeline_cube_cli_tests)
+gtest_discover_tests(dyeline_cube_cli_tests)
+
 # The Look Designer's editing model.
 add_executable(dyeline_look_editor_tests curve_edit_test.cpp handles_test.cpp look_editor_test.cpp preview_test.cpp
     bundled_looks_test.cpp)

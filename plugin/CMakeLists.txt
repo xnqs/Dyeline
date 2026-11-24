@@ -72,3 +72,7 @@ install(DIRECTORY "${DYELINE_BUNDLE_DIR}" DESTINATION "${DYELINE_OFX_INSTALL_DIR
 # where the bundle layout is known.
 add_subdirectory(${PROJECT_SOURCE_DIR}/designer ${CMAKE_BINARY_DIR}/designer)
 add_dependencies(dyeline_ofx dyeline_designer)
+
+# So is dyeline-cube, the command-line LUT baker.
+add_subdirectory(${PROJECT_SOURCE_DIR}/cli ${CMAKE_BINARY_DIR}/cli)
+add_dependencies(dyeline_ofx dyeline_cube)

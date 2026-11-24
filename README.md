@@ -133,6 +133,8 @@ The bundle ships `dyeline-designer` next to the plugin binary: a window for edit
   scene-linear input clips above 1. Tools that depend on where a pixel is, or on its
   neighbors (the gradient and spot tools, Lens Vignette, Grain, Diffusion Filter, Local Contrast, Telecine Net, Halation), can't be held by a LUT and are
   left out; the dialog lists them and the file's comments name them.
+- `dyeline-cube`, beside the designer in the bundle, bakes looks into `.cube` LUTs from the
+  command line, a whole folder at once ([docs/user-guide.md](docs/user-guide.md#baking-luts-from-the-command-line)).
 - Ctrl+Z and Ctrl+Shift+Z (Cmd on macOS) undo and redo.
 
 A tool this build doesn't know stays in the look, shown as missing, and is bypassed.
